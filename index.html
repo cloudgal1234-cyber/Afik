@@ -43,7 +43,7 @@
   <!-- HERO -->
   <section class="hero wrap" aria-labelledby="heroTitle">
     <div class="hero__copy">
-      <p class="eyebrow reveal" style="--d:0">מאמן כושר אישי · גוש דן והשרון</p>
+      <p class="eyebrow reveal" style="--d:0" data-cfg="eyebrow">מאמן כושר אישי · גוש דן והשרון</p>
       <h1 class="hero__title" id="heroTitle">
         <span class="line reveal" style="--d:1">האימון</span>
         <span class="line reveal" style="--d:2">מגיע <em>אליך</em></span>
@@ -92,7 +92,7 @@
       <li><b>0</b><span>דקות נסיעה שלך</span></li>
       <li><b>2×2 מ׳</b><span>זה כל המקום שצריך</span></li>
       <li><b>כל הציוד</b><span>מגיע עם אפיק</span></li>
-      <li><b>א׳–ו׳</b><span>בוקר וערב</span></li>
+      <li><b data-cfg="days">א׳–ו׳</b><span data-cfg="daysSub">בוקר וערב</span></li>
     </ul>
   </section>
 
@@ -131,7 +131,7 @@
             <label class="switch" for="firstTime">
               <input type="checkbox" id="firstTime">
               <span class="switch__track" aria-hidden="true"><span class="switch__thumb"></span></span>
-              <span class="switch__text"><b>זה האימון הראשון שלי עם אפיק</b><small>אימון היכרות ב־30% הנחה, כולל בדיקת תנועה ובניית תוכנית</small></span>
+              <span class="switch__text"><b>זה האימון הראשון שלי עם אפיק</b><small data-cfg="discount">אימון היכרות ב־30% הנחה, כולל בדיקת תנועה ובניית תוכנית</small></span>
             </label>
             <p class="field__error" id="err1" role="alert"></p>
           </fieldset>
@@ -234,7 +234,7 @@
             <label class="check" for="fAgree">
               <input type="checkbox" id="fAgree">
               <span class="check__box" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3 8.5l3 3 7-7"/></svg></span>
-              <span>ביטול או שינוי עד 12 שעות לפני האימון ללא חיוב</span>
+              <span data-cfg="cancelPolicy">ביטול או שינוי עד 12 שעות לפני האימון ללא חיוב</span>
             </label>
             <p class="field__error" id="err4" role="alert"></p>
           </fieldset>
@@ -343,7 +343,7 @@
     </div>
     <div class="faq__list">
       <details><summary>יש לי דירה קטנה. זה מספיק?</summary><div><p>כן. שטח של 2×2 מטר מספיק לרוב האימונים. אם אין, מתאמנים במרפסת, בחדר הכושר של הבניין או בגינה ציבורית קרובה.</p></div></details>
-      <details><summary>מה קורה אם צריך לבטל?</summary><div><p>ביטול או שינוי עד 12 שעות לפני האימון לא עולה כלום. אפשר לבטל ישירות מ"האימונים שלי" ולעדכן את אפיק בוואטסאפ.</p></div></details>
+      <details><summary>מה קורה אם צריך לבטל?</summary><div><p data-cfg="faqCancel">ביטול או שינוי עד 12 שעות לפני האימון לא עולה כלום. אפשר לבטל ישירות מ"האימונים שלי" ולעדכן את אפיק בוואטסאפ.</p></div></details>
       <details><summary>אני אחרי פציעה. אפשר להתאמן?</summary><div><p>ברוב המקרים כן, אחרי אישור רופא או פיזיותרפיסט. כתבו את זה בשדה ההערות ואפיק יבנה אימון שעוקף את האזור הרגיש.</p></div></details>
       <details><summary>איך משלמים?</summary><div><p>אחרי האימון, במזומן, בביט או בפייבוקס. אין דמי מנוי ואין התחייבות. מי שמתאמן קבוע מקבל מחיר מוזל לכרטיסייה.</p></div></details>
       <details><summary>לאילו ערים אפיק מגיע?</summary><div><p id="faqCities"></p></div></details>
@@ -355,7 +355,7 @@
   <div class="wrap footer__inner">
     <div>
       <p class="logo logo--foot"><span class="logo__word">אפיק</span><span class="logo__dot" aria-hidden="true"></span></p>
-      <p class="footer__text">אימון אישי עד הבית. ימים א׳–ה׳ 06:00–22:00, יום ו׳ 07:00–13:00.</p>
+      <p class="footer__text" data-cfg="footerHours">אימון אישי עד הבית. ימים א׳–ה׳ 06:00–22:00, יום ו׳ 07:00–13:00.</p>
     </div>
     <div class="footer__contact">
       <p class="footer__label">וואטסאפ לאפיק</p>
@@ -425,6 +425,11 @@
         <p class="eyebrow" id="dashDate"></p>
         <h1 id="dashHi">שלום, אפיק</h1>
       </div>
+      <div class="dtabs" role="tablist" aria-label="אזורי ניהול">
+        <button type="button" class="dtab" role="tab" id="tabBtnAgenda" aria-selected="true" aria-controls="tabAgenda" data-tab="agenda">יומן</button>
+        <button type="button" class="dtab" role="tab" id="tabBtnSettings" aria-selected="false" aria-controls="tabSettings" data-tab="settings">הגדרות האתר</button>
+      </div>
+      <div class="dtab__panel" id="tabAgenda" role="tabpanel" aria-labelledby="tabBtnAgenda">
       <div class="banner" id="modeBanner" hidden>
         <b>האתר עוד לא מחובר ליומן המשותף.</b>
         <span>כרגע רואים כאן רק אימונים שנשמרו במכשיר הזה. באתר החי (ב־Vercel) כל הזמנה מופיעה כאן אוטומטית.</span>
@@ -459,6 +464,15 @@
         </aside>
       </div>
       <p class="dash__note" id="syncNote"></p>
+      </div>
+      <div class="dtab__panel" id="tabSettings" role="tabpanel" aria-labelledby="tabBtnSettings" hidden>
+        <form id="settingsForm" class="settings" novalidate></form>
+        <div class="savebar" id="saveBar" hidden>
+          <p class="savebar__text"><span class="savebar__dot" aria-hidden="true"></span>יש שינויים שעוד לא נשמרו</p>
+          <button type="button" class="btn btn--ghost btn--small" id="settingsReset">ביטול השינויים</button>
+          <button type="button" class="btn btn--primary btn--small" id="settingsSave" data-ripple><span class="btn__label">שמירה ופרסום באתר</span><span class="spinner" aria-hidden="true"></span></button>
+        </div>
+      </div>
     </div>
   </div>
 </section>

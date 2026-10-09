@@ -4,6 +4,7 @@
 
   const CONFIG = {
     trainer: "אפיק",
+    area: "גוש דן והשרון",
     // כתובת השרת (api/booking.js שרץ ב-Vercel). ריק = מצב מקומי בלבד, בלי שרת
     apiUrl: "/api/booking",
     // מספר הוואטסאפ של אפיק בפורמט בינלאומי, בלי + ובלי מקפים
@@ -37,31 +38,43 @@
         sub: "משקולות, גומיות ומשקל גוף",
         desc: "בונים שריר ויציבה עם תרגילים שאפשר לעשות בכל סלון. מתאים גם למי שלא הרים משקולת מעולם.",
         gear: ["מזרן", "קטלבל 8–16 ק״ג", "משקולות יד", "גומיות התנגדות"],
-        icon: '<path d="M6 8v8M3 10v4M18 8v8M21 10v4M6 12h12"/>'
+        icon: "strength"
       },
       {
         id: "hiit", name: "HIIT שורף", minutes: 45, price: 230,
         sub: "אינטרוולים קצרים ועצימים",
         desc: "45 דקות של עבודה בעצימות גבוהה ומנוחות קצרות. דופק למעלה, זמן קצר, הרבה זיעה.",
         gear: ["מזרן", "חבל קפיצה", "קטלבל 12 ק״ג", "טיימר"],
-        icon: '<path d="M13 2 5 14h6l-1 8 8-12h-6l1-8Z"/>'
+        icon: "hiit"
       },
       {
         id: "mobility", name: "גמישות וגב בריא", minutes: 60, price: 240,
         sub: "מוביליטי, ליבה ונשימה",
         desc: "למי שיושב מול מחשב כל היום. משחררים ירכיים וכתפיים ומחזקים את שרירי הליבה שמחזיקים את הגב.",
         gear: ["מזרן", "רולר עיסוי", "כדור פיזיו", "רצועת מתיחה"],
-        icon: '<circle cx="12" cy="5" r="2"/><path d="M12 7v6m0 0-4 7m4-7 4 7M6 10c2 1.5 4 2 6 2s4-.5 6-2"/>'
+        icon: "mobility"
       },
       {
         id: "duo", name: "אימון זוגי", minutes: 60, price: 380,
         sub: "בן או בת זוג, חבר או אמא",
         desc: "אימון אחד לשניים, עם תוכנית שמתאימה לכל אחד. מתחלקים במחיר ומוסיפים קצת תחרות.",
         gear: ["2 מזרנים", "קטלבלים בזוגות", "גומיות התנגדות", "TRX"],
-        icon: '<circle cx="8" cy="7" r="3"/><circle cx="16" cy="7" r="3"/><path d="M2 20c0-3.5 2.7-6 6-6s6 2.5 6 6m-2.5-5.7A6 6 0 0 1 22 20"/>'
+        icon: "duo"
       }
     ]
   };
+
+  const ICONS = {
+    strength: '<path d="M6 8v8M3 10v4M18 8v8M21 10v4M6 12h12"/>',
+    hiit: '<path d="M13 2 5 14h6l-1 8 8-12h-6l1-8Z"/>',
+    mobility: '<circle cx="12" cy="5" r="2"/><path d="M12 7v6m0 0-4 7m4-7 4 7M6 10c2 1.5 4 2 6 2s4-.5 6-2"/>',
+    duo: '<circle cx="8" cy="7" r="3"/><circle cx="16" cy="7" r="3"/><path d="M2 20c0-3.5 2.7-6 6-6s6 2.5 6 6m-2.5-5.7A6 6 0 0 1 22 20"/>',
+    run: '<circle cx="14" cy="4.5" r="2"/><path d="M8 21l3-6 3 2v5M6 12l3-4 4 1 3 4h3M11 15l-1-5"/>',
+    heart: '<path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10Z"/><path d="M8 12h2l1-2 2 4 1-2h2"/>'
+  };
+  // השדות שאפיק יכול לערוך מדף הניהול. ברירות המחדל נשמרות למקרה שאין הגדרות שמורות
+  const EDITABLE = ["trainer", "phoneDisplay", "area", "hours", "workouts", "cities", "firstTimeDiscount", "minLeadHours", "daysAhead", "cancelHours"];
+  const pickEditable = (src) => JSON.parse(JSON.stringify(Object.fromEntries(EDITABLE.map((k) => [k, src[k]]))));
 
   /* ---------- helpers ---------- */
   const $ = (s, r = document) => r.querySelector(s);
@@ -130,7 +143,7 @@
       const data = await res.json();
       serverTaken = new Set((data.taken || []).map(([iso, h]) => `${iso}@${Number(h)}`));
     } catch {
-      toast("לא הצלחנו לטעון את היומן של אפיק. נסו לרענן בעוד רגע");
+      toast(`לא הצלחנו לטעון את היומן של ${CONFIG.trainer}. נסו לרענן בעוד רגע`);
     }
     refreshAvailability();
   }
@@ -248,17 +261,20 @@
   /* ---------- showcase + pick ---------- */
   const svg = (inner, size = 24) => `<svg viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true">${inner}</svg>`;
 
+  const iconSvg = (key, size) => svg(ICONS[key] || ICONS.strength, size);
+  function renderShowcase() {
   $("#workoutShowcase").innerHTML = CONFIG.workouts.map((w) => `
     <article class="wcard">
-      <span class="wcard__icon">${svg(w.icon, 26)}</span>
-      <h3>${w.name}</h3>
-      <p>${w.desc}</p>
+      <span class="wcard__icon">${iconSvg(w.icon, 26)}</span>
+      <h3>${esc(w.name)}</h3>
+      <p>${esc(w.desc)}</p>
       <div class="wcard__meta">
         <span>${w.minutes} דק׳</span><b>${ils(w.price)}</b>
       </div>
       <span class="wcard__go">לשריין ${svg('<path d="M14 6l-6 6 6 6"/>', 16)}</span>
-      <button class="wcard__btn" type="button" data-pick="${w.id}" aria-label="לשריין ${w.name}"></button>
+      <button class="wcard__btn" type="button" data-pick="${w.id}" aria-label="לשריין ${esc(w.name)}"></button>
     </article>`).join("");
+  }
 
   function renderPick() {
     $("#workoutPick").innerHTML = CONFIG.workouts.map((w) => {
@@ -266,10 +282,10 @@
       const checked = state.workoutId === w.id;
       return `
         <button type="button" class="opt" role="radio" aria-checked="${checked}" tabindex="${checked || (!state.workoutId && w === CONFIG.workouts[0]) ? 0 : -1}" data-id="${w.id}">
-          <span class="opt__icon">${svg(w.icon)}</span>
-          <span class="opt__name">${w.name}</span>
+          <span class="opt__icon">${iconSvg(w.icon)}</span>
+          <span class="opt__name">${esc(w.name)}</span>
           <span class="opt__price">${p.discount ? `<s>${ils(p.base)}</s>` : ""}${ils(p.total)}</span>
-          <span class="opt__sub">${w.minutes} דק׳ · ${w.sub}</span>
+          <span class="opt__sub">${w.minutes} דק׳${w.sub ? ` · ${esc(w.sub)}` : ""}</span>
         </button>`;
     }).join("");
   }
@@ -297,7 +313,7 @@
   $("#firstTime").addEventListener("change", (e) => {
     state.firstTime = e.target.checked;
     renderPick(); updateSummary();
-    if (state.firstTime) toast("הנחת היכרות של 30% נוספה", "ok");
+    if (state.firstTime) toast(`הנחת היכרות של ${Math.round(CONFIG.firstTimeDiscount * 100)}% נוספה`, "ok");
   });
 
   document.addEventListener("click", (e) => {
@@ -378,7 +394,7 @@
             ${g.map((s) => `<button type="button" class="slot" role="radio" style="--i:${i++}" data-h="${s.h}" aria-checked="${state.time === s.h}" ${s.free ? "" : "disabled"} aria-label="${hhmm(s.h)} עד ${endTime(s.h, mins)}${s.free ? "" : s.tooSoon ? ", מוקדם מדי לשריון" : ", תפוס"}">${hhmm(s.h)}</button>`).join("")}
           </div>
         </div>`).join("")}
-      <p class="slots__foot">${fromISO(state.date).getDay() === 5 ? "ביום שישי אפיק מסיים ב־13:00." : "בין 11:00 ל־16:00 אפיק בדרכים בין מתאמנים."}</p>`;
+      <p class="slots__foot">${esc(slotsFootnote(state.date))}</p>`;
   }
 
   $("#slots").addEventListener("click", (e) => {
@@ -391,12 +407,17 @@
 
   /* ---------- details form ---------- */
   const fCity = $("#fCity");
-  fCity.innerHTML = `<option value="">בחירת עיר</option>` + CONFIG.cities.map((c) => `<option value="${c.name}">${c.name}</option>`).join("");
-  $("#faqCities").textContent = `${CONFIG.cities.map((c) => c.name).join(", ")}. בחלק מהערים יש תוספת נסיעה קטנה שמופיעה בזמן ההזמנה. גרים קצת מחוץ לאזור? כתבו לאפיק בוואטסאפ.`;
+  function renderCityOptions() {
+    const current = fCity.value;
+    fCity.innerHTML = `<option value="">בחירת עיר</option>` + CONFIG.cities.map((c) => `<option value="${esc(c.name)}">${esc(c.name)}</option>`).join("");
+    if (cityByName(current)) fCity.value = current;
+    const anyFee = CONFIG.cities.some((c) => c.fee);
+    $("#faqCities").textContent = `${CONFIG.cities.map((c) => c.name).join(", ")}.${anyFee ? " בחלק מהערים יש תוספת נסיעה קטנה שמופיעה בזמן ההזמנה." : ""} גרים קצת מחוץ לאזור? כתבו ל${CONFIG.trainer} בוואטסאפ.`;
+  }
 
   const fields = {
     fName: { key: "name", test: (v) => v.trim().split(/\s+/).length >= 2 && v.trim().length >= 4, msg: (v) => v.trim() ? "צריך שם פרטי ושם משפחה" : "איך קוראים לך?" },
-    fPhone: { key: "phone", test: (v) => /^05\d{8}$/.test(normPhone(v)), msg: (v) => v.trim() ? "מספר נייד ישראלי מתחיל ב־05 ויש בו 10 ספרות" : "לאן אפיק ישלח אישור?" },
+    fPhone: { key: "phone", test: (v) => /^05\d{8}$/.test(normPhone(v)), msg: (v) => v.trim() ? "מספר נייד ישראלי מתחיל ב־05 ויש בו 10 ספרות" : `לאן ${CONFIG.trainer} ישלח אישור?` },
     fCity: { key: "city", test: (v) => !!v, msg: () => "לאיזו עיר להגיע?" },
     fStreet: { key: "street", test: (v) => /\d/.test(v) && /[֐-׿a-zA-Z]{2,}/.test(v), msg: (v) => v.trim() ? "חסר מספר בית" : "לאיזו כתובת להגיע?" }
   };
@@ -720,15 +741,15 @@
 
   function showDone(b) {
     const w = workoutById(b.workoutId);
-    $("#doneText").textContent = `${w.name} ${friendlyDay(b.date) === fmtLong.format(fromISO(b.date)) ? "ב" + friendlyDay(b.date) : friendlyDay(b.date)} בשעה ${hhmm(b.time)}, ב${b.details.street}, ${b.details.city}. אפיק מביא את הציוד, את/ה מביא/ה מים ומגבת.`;
+    $("#doneText").textContent = `${w.name} ${friendlyDay(b.date) === fmtLong.format(fromISO(b.date)) ? "ב" + friendlyDay(b.date) : friendlyDay(b.date)} בשעה ${hhmm(b.time)}, ב${b.details.street}, ${b.details.city}. ${CONFIG.trainer} מביא את הציוד, את/ה מביא/ה מים ומגבת.`;
     $("#doneRef").textContent = b.id;
     $(".done__title").textContent = online ? "האימון נקבע!" : "השריון נשמר!";
     $(".done__step").innerHTML = online
-      ? "<b>אפיק כבר רואה את ההזמנה ביומן שלו</b> ויאשר אותה בהודעה. רוצים להוסיף משהו? אפשר לכתוב לו גם בוואטסאפ."
-      : "<b>עוד צעד אחד:</b> שולחים לאפיק את הפרטים בוואטסאפ, והוא מאשר את המועד בהודעה חוזרת.";
+      ? `<b>${esc(CONFIG.trainer)} כבר רואה את ההזמנה ביומן שלו</b> ויאשר אותה בהודעה. רוצים להוסיף משהו? אפשר לכתוב לו גם בוואטסאפ.`
+      : `<b>עוד צעד אחד:</b> שולחים ל${esc(CONFIG.trainer)} את הפרטים בוואטסאפ, והוא מאשר את המועד בהודעה חוזרת.`;
     $("#waLink").classList.toggle("btn--primary", !online);
     $("#waLink").classList.toggle("btn--ghost", online);
-    $("#waLink span").textContent = online ? "הודעה לאפיק בוואטסאפ" : "שליחה לאפיק בוואטסאפ";
+    $("#waLink span").textContent = online ? `הודעה ל${CONFIG.trainer} בוואטסאפ` : `שליחה ל${CONFIG.trainer} בוואטסאפ`;
     $("#waLink").href = waUrl(waText(b));
     $("#gcalLink").href = gcalUrl(b);
     goTo(5, true);
@@ -795,11 +816,11 @@
           <p class="bk__meta">${esc(w ? w.name : "")} · ${b.minutes} דק׳ · ${ils(b.price)}<br>${esc(b.details.street)}, ${esc(b.details.city)} · <span dir="ltr">${b.id}</span></p>
           ${isPast ? "" : `
           <div class="bk__actions">
-            <a class="btn btn--ghost" href="${waUrl(waText(b))}" target="_blank" rel="noopener">שליחה לאפיק</a>
+            <a class="btn btn--ghost" href="${waUrl(waText(b))}" target="_blank" rel="noopener">שליחה ל${CONFIG.trainer}</a>
             <a class="btn btn--ghost" href="${gcalUrl(b)}" target="_blank" rel="noopener">ליומן</a>
             <button type="button" class="btn btn--ghost" data-cancel="${b.id}">ביטול</button>
           </div>
-          ${late ? `<p class="bk__meta">פחות מ־${CONFIG.cancelHours} שעות לאימון. ביטול עכשיו כרוך בתיאום עם אפיק.</p>` : ""}`}
+          ${late ? `<p class="bk__meta">פחות מ־${CONFIG.cancelHours} שעות לאימון. ביטול עכשיו כרוך בתיאום עם ${CONFIG.trainer}.</p>` : ""}`}
         </article>`;
     }).join("");
   }
@@ -833,7 +854,7 @@
           store.set("bookings", bookings);
           if (target) serverTaken?.delete(`${target.date}@${target.time}`);
           refreshBookingsUI(); renderDrawer(); refreshAvailability();
-          toast(online ? "האימון בוטל ואפיק רואה את זה ביומן" : "האימון בוטל. כדאי לעדכן את אפיק בוואטסאפ");
+          toast(online ? `האימון בוטל ו${CONFIG.trainer} רואה את זה ביומן` : `האימון בוטל. כדאי לעדכן את ${CONFIG.trainer} בוואטסאפ`);
         }, reduceMotion ? 0 : 300);
       };
       if (!online || !target) { removeLocal(); return; }
@@ -883,13 +904,12 @@
     b.checked = !!todo[b.id];
     b.addEventListener("change", () => {
       todo[b.id] = b.checked; store.set("todo", todo); syncTodo();
-      if (todoBoxes.every((x) => x.checked)) toast("הבית מוכן. אפיק יכול להגיע", "ok");
+      if (todoBoxes.every((x) => x.checked)) toast(`הבית מוכן. ${CONFIG.trainer} יכול להגיע`, "ok");
     });
   });
   syncTodo();
 
   /* ---------- footer phone ---------- */
-  $("#phoneText").textContent = CONFIG.phoneDisplay;
   $("#copyPhone").addEventListener("click", async (e) => {
     const btn = e.currentTarget;
     try {
@@ -930,6 +950,92 @@
       });
       if (el < 2600) requestAnimationFrame(frame); else ctx.clearRect(0, 0, innerWidth, innerHeight);
     })(t0);
+  }
+
+  /* ---------- site settings: loaded from the server, edited in the admin page ---------- */
+  const DAY_SHORT = ["א׳", "ב׳", "ג׳", "ד׳", "ה׳", "ו׳", "ש׳"];
+  const DAY_LONG = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
+  const DEFAULTS = pickEditable(CONFIG);
+  let appliedName = CONFIG.trainer;
+
+  function dayRange(d) {
+    const hs = CONFIG.hours[d] || [];
+    if (!hs.length) return "";
+    const longest = Math.max(60, ...CONFIG.workouts.map((w) => w.minutes));
+    return `${hhmm(hs[0])}–${endTime(hs[hs.length - 1], longest)}`;
+  }
+
+  // "א׳–ה׳ 06:00–22:00 · ו׳ 07:00–13:00"
+  function hoursSummary() {
+    const groups = [];
+    for (let d = 0; d < 7; d++) {
+      const r = dayRange(d);
+      if (!r) continue;
+      const last = groups[groups.length - 1];
+      if (last && last.range === r && last.to === d - 1) last.to = d;
+      else groups.push({ from: d, to: d, range: r });
+    }
+    return groups.map((g) => `${g.from === g.to ? DAY_SHORT[g.from] : `${DAY_SHORT[g.from]}–${DAY_SHORT[g.to]}`} ${g.range}`).join(" · ");
+  }
+
+  function openDaysLabel() {
+    const open = [0, 1, 2, 3, 4, 5, 6].filter((d) => (CONFIG.hours[d] || []).length);
+    if (!open.length) return "—";
+    const runs = [];
+    open.forEach((d) => { const r = runs[runs.length - 1]; if (r && d === r[1] + 1) r[1] = d; else runs.push([d, d]); });
+    return runs.map(([f, t]) => (f === t ? DAY_SHORT[f] : `${DAY_SHORT[f]}–${DAY_SHORT[t]}`)).join(", ");
+  }
+
+  function slotsFootnote(iso) {
+    const hs = CONFIG.hours[fromISO(iso).getDay()] || [];
+    if (!hs.length) return "";
+    for (let i = 1; i < hs.length; i++) {
+      if (hs[i] - hs[i - 1] >= 3) return `בין ${hhmm(hs[i - 1] + 1)} ל־${hhmm(hs[i])} ${CONFIG.trainer} בדרכים בין מתאמנים.`;
+    }
+    return `האימון האחרון ביום הזה מתחיל ב־${hhmm(hs[hs.length - 1])}.`;
+  }
+
+  function renameTrainer(from, to) {
+    if (!from || from === to) return;
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+      acceptNode: (n) => n.parentElement && !n.parentElement.closest("script, style, textarea") && n.nodeValue.includes(from) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT
+    });
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    nodes.forEach((n) => { n.nodeValue = n.nodeValue.split(from).join(to); });
+  }
+
+  function applyConfig(cfg) {
+    if (cfg) EDITABLE.forEach((k) => { if (cfg[k] != null) CONFIG[k] = JSON.parse(JSON.stringify(cfg[k])); });
+    CONFIG.whatsapp = normPhone(CONFIG.phoneDisplay).replace(/^0/, "972");
+    renameTrainer(appliedName, CONFIG.trainer);
+    appliedName = CONFIG.trainer;
+    const set = (key, text) => $$(`[data-cfg="${key}"]`).forEach((el) => { el.textContent = text; });
+    set("eyebrow", CONFIG.area ? `מאמן כושר אישי · ${CONFIG.area}` : "מאמן כושר אישי");
+    set("days", openDaysLabel());
+    set("daysSub", hoursSummary() || "בתיאום מראש");
+    const pct = Math.round(CONFIG.firstTimeDiscount * 100);
+    set("discount", pct ? `אימון היכרות ב־${pct}% הנחה, כולל בדיקת תנועה ובניית תוכנית` : "כולל בדיקת תנועה ובניית תוכנית");
+    $("#firstTime").closest(".switch").hidden = !pct;
+    if (!pct && state.firstTime) { state.firstTime = false; $("#firstTime").checked = false; }
+    set("cancelPolicy", CONFIG.cancelHours ? `ביטול או שינוי עד ${CONFIG.cancelHours} שעות לפני האימון ללא חיוב` : "ביטול או שינוי ללא חיוב");
+    set("faqCancel", `${CONFIG.cancelHours ? `ביטול או שינוי עד ${CONFIG.cancelHours} שעות לפני האימון לא עולה כלום.` : "ביטול או שינוי לא עולה כלום."} אפשר לבטל ישירות מ"האימונים שלי" ולעדכן את ${CONFIG.trainer} בוואטסאפ.`);
+    set("footerHours", `אימון אישי עד הבית. ${hoursSummary()}`);
+    $("#phoneText").textContent = CONFIG.phoneDisplay;
+    if (state.workoutId && !workoutById(state.workoutId)) state.workoutId = null;
+    renderShowcase(); renderPick(); renderCityOptions();
+    updateSummary();
+    refreshAvailability();
+  }
+
+  async function loadConfig() {
+    if (!online) { applyConfig(store.get("config", null)); return; }
+    try {
+      const res = await fetch(`${API}?action=config`);
+      const data = await res.json();
+      if (data.config) applyConfig(data.config);
+      configLoaded = true;
+    } catch { /* keep defaults */ }
   }
 
   /* ---------- admin: #main ---------- */
@@ -981,11 +1087,12 @@
     $("#admin").hidden = !isAdmin;
     if (isAdmin) {
       if (drawer && !drawer.hidden) closeDrawer();
-      document.title = "אפיק · ניהול";
+      document.title = `${CONFIG.trainer} · ניהול`;
       token ? showDash() : showGate();
       scrollTo(0, 0);
     } else if (wasAdmin) {
-      document.title = "קביעת אימונים אצל אפיק";
+      document.title = `קביעת אימונים אצל ${CONFIG.trainer}`;
+      root.classList.remove("has-savebar");
       clearInterval(syncTimer);
       refreshBookingsUI();
       online ? loadTaken() : refreshAvailability();
@@ -1418,10 +1525,306 @@
     $("#importText").focus();
   });
 
+  /* settings editor */
+  let draft = null;
+  let configLoaded = !online;
+  const HOUR_FROM = 5, HOUR_TO = 22;
+  const current = () => pickEditable(CONFIG);
+  const isDirty = () => !!draft && JSON.stringify(draft) !== JSON.stringify(current());
+
+  $$(".dtab").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
+
+  async function showTab(tab) {
+    $$(".dtab").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === tab)));
+    $("#tabAgenda").hidden = tab !== "agenda";
+    $("#tabSettings").hidden = tab !== "settings";
+    if (tab === "settings" && !draft) {
+      if (!configLoaded) {
+        $("#settingsForm").innerHTML = `<div class="empty"><span class="spinner spinner--big" aria-hidden="true"></span><p>טוען הגדרות…</p></div>`;
+        await loadConfig();
+      }
+      draft = current();
+      renderSettings();
+    }
+  }
+
+  const fieldHtml = (label, input, opts = {}) =>
+    `<div class="field${opts.full ? " field--full" : ""}"><label${opts.id ? ` for="${opts.id}"` : ""}>${label}${opts.hint ? ` <small>${opts.hint}</small>` : ""}</label>${input}</div>`;
+  const val = (v) => esc(v == null ? "" : String(v));
+
+  function hoursRows() {
+    return [0, 1, 2, 3, 4, 5, 6].map((d) => {
+      const hs = draft.hours[d] || [];
+      const chips = [];
+      for (let h = HOUR_FROM; h <= HOUR_TO; h++) {
+        chips.push(`<button type="button" class="hchip" data-day="${d}" data-h="${h}" aria-pressed="${hs.includes(h)}" aria-label="יום ${DAY_LONG[d]} ${hhmm(h)}">${pad(h)}</button>`);
+      }
+      return `
+        <div class="hours__row">
+          <span class="hours__day">${DAY_LONG[d]}<small>${hs.length ? `${hs.length} שעות` : "סגור"}</small></span>
+          <div class="hours__chips">${chips.join("")}</div>
+          <div class="hours__actions">
+            ${d === 0 ? `<button type="button" data-act="copyWeek">העתקה לב׳–ה׳</button>` : `<button type="button" data-act="copyPrev" data-day="${d}">כמו ${DAY_LONG[d - 1]}</button>`}
+            ${hs.length ? `<button type="button" data-act="clearDay" data-day="${d}">סגור</button>` : ""}
+          </div>
+        </div>`;
+    }).join("");
+  }
+
+  function workoutItem(w, i) {
+    const n = (f) => `id="w${i}${f}" data-w="${i}" data-f="${f}"`;
+    return `
+      <div class="witem" style="--i:${i}">
+        <div class="witem__head">
+          <div class="iconpick" role="group" aria-label="אייקון">
+            ${Object.keys(ICONS).map((k) => `<button type="button" data-w="${i}" data-icon="${k}" aria-pressed="${w.icon === k}" aria-label="אייקון ${k}">${svg(ICONS[k], 20)}</button>`).join("")}
+          </div>
+          <b data-preview="${i}">${esc(w.name || "אימון חדש")}</b>
+          ${draft.workouts.length > 1 ? `<button type="button" class="linkbtn" data-act="delWorkout" data-w="${i}">מחיקה</button>` : ""}
+        </div>
+        <div class="sgrid">
+          ${fieldHtml("שם האימון", `<input type="text" ${n("name")} value="${val(w.name)}" maxlength="40">`, { id: `w${i}name` })}
+          ${fieldHtml("משך", `<div class="field__suffix"><input type="number" inputmode="numeric" min="15" max="180" step="5" ${n("minutes")} value="${val(w.minutes)}"><span>דקות</span></div>`, { id: `w${i}minutes` })}
+          ${fieldHtml("מחיר", `<div class="field__suffix"><input type="number" inputmode="numeric" min="0" max="5000" ${n("price")} value="${val(w.price)}"><span>₪</span></div>`, { id: `w${i}price` })}
+          ${fieldHtml("שורת משנה", `<input type="text" ${n("sub")} value="${val(w.sub)}" maxlength="80" placeholder="למשל: משקולות, גומיות ומשקל גוף">`, { id: `w${i}sub` })}
+        </div>
+        ${fieldHtml("תיאור", `<textarea rows="2" ${n("desc")} maxlength="300">${val(w.desc)}</textarea>`, { id: `w${i}desc` })}
+        ${fieldHtml("ציוד שאתה מביא", `<input type="text" ${n("gear")} value="${val((w.gear || []).join(", "))}" placeholder="מזרן, קטלבל, גומיות">`, { id: `w${i}gear`, hint: "(מופרד בפסיקים)" })}
+      </div>`;
+  }
+
+  function renderSettings() {
+    const d = draft;
+    $("#settingsForm").innerHTML = `
+      <section class="scard">
+        <div class="scard__head"><h2>פרטי העסק</h2><p>מופיעים בראש האתר, בתחתית ובהודעות הוואטסאפ.</p></div>
+        <div class="sgrid">
+          ${fieldHtml("שם המאמן", `<input id="sTrainer" type="text" data-k="trainer" value="${val(d.trainer)}" maxlength="30">`, { id: "sTrainer" })}
+          ${fieldHtml("טלפון נייד", `<input id="sPhone" type="tel" dir="ltr" data-k="phoneDisplay" value="${val(d.phoneDisplay)}" placeholder="050-123-4567">`, { id: "sPhone", hint: "(גם לוואטסאפ)" })}
+          ${fieldHtml("אזור שירות", `<input id="sArea" type="text" data-k="area" value="${val(d.area)}" maxlength="60" placeholder="גוש דן והשרון">`, { id: "sArea" })}
+        </div>
+      </section>
+
+      <section class="scard">
+        <div class="scard__head"><h2>שעות פעילות</h2><p>מסמנים את השעות שבהן אימון יכול להתחיל. שעה שלא מסומנת לא תופיע ללקוחות.</p></div>
+        <div class="hours" id="hoursBox">${hoursRows()}</div>
+        <p class="hours__hint" id="hoursHint">${esc(hoursSummaryOf(d) || "כרגע כל הימים סגורים")}</p>
+      </section>
+
+      <section class="scard">
+        <div class="scard__head"><h2>סוגי אימונים ומחירים</h2><p>עד 12 סוגים. אימון שנמחק נשאר בהזמנות שכבר נקבעו.</p></div>
+        <div class="wedit">${d.workouts.map(workoutItem).join("")}</div>
+        ${d.workouts.length < 12 ? `<button type="button" class="addbtn" data-act="addWorkout">+ הוספת סוג אימון</button>` : ""}
+      </section>
+
+      <section class="scard">
+        <div class="scard__head"><h2>ערים ותוספת נסיעה</h2><p>רק הערים ברשימה יופיעו בטופס ההזמנה. תוספת 0 = בלי תוספת.</p></div>
+        <div class="cities">
+          <div class="crow crow__head"><span>עיר</span><span>תוספת נסיעה</span><span></span></div>
+          ${d.cities.map((c, i) => `
+            <div class="crow" style="--i:${i}">
+              <input type="text" data-c="${i}" data-f="name" value="${val(c.name)}" maxlength="40" aria-label="שם העיר">
+              <div class="field__suffix"><input type="number" inputmode="numeric" min="0" max="500" data-c="${i}" data-f="fee" value="${val(c.fee)}" aria-label="תוספת נסיעה"><span>₪</span></div>
+              ${d.cities.length > 1 ? `<button type="button" class="linkbtn" data-act="delCity" data-c="${i}" aria-label="מחיקת ${val(c.name)}">מחיקה</button>` : "<span></span>"}
+            </div>`).join("")}
+        </div>
+        <button type="button" class="addbtn" data-act="addCity">+ הוספת עיר</button>
+      </section>
+
+      <section class="scard">
+        <div class="scard__head"><h2>כללי הזמנה</h2></div>
+        <div class="sgrid">
+          ${fieldHtml("הנחה לאימון ראשון", `<div class="field__suffix"><input id="sDisc" type="number" inputmode="numeric" min="0" max="90" data-k="firstTimeDiscount" data-scale="0.01" value="${Math.round(d.firstTimeDiscount * 100)}"><span>%</span></div>`, { id: "sDisc", hint: "(0 = בלי)" })}
+          ${fieldHtml("אפשר לקבוע עד", `<div class="field__suffix"><input id="sLead" type="number" inputmode="numeric" min="0" max="72" data-k="minLeadHours" value="${val(d.minLeadHours)}"><span>שעות לפני</span></div>`, { id: "sLead" })}
+          ${fieldHtml("כמה זמן קדימה אפשר לקבוע", `<div class="field__suffix"><input id="sAhead" type="number" inputmode="numeric" min="7" max="180" data-k="daysAhead" value="${val(d.daysAhead)}"><span>ימים</span></div>`, { id: "sAhead" })}
+          ${fieldHtml("ביטול חינם עד", `<div class="field__suffix"><input id="sCancel" type="number" inputmode="numeric" min="0" max="72" data-k="cancelHours" value="${val(d.cancelHours)}"><span>שעות לפני</span></div>`, { id: "sCancel" })}
+        </div>
+      </section>
+
+      <section class="scard">
+        <div class="scard__head"><h2>סיסמת הניהול</h2><p>${online ? "הסיסמה החדשה נכנסת לתוקף מיד." : "שינוי סיסמה זמין רק באתר החי."}</p></div>
+        ${online ? `
+        <div class="sgrid">
+          ${fieldHtml("סיסמה נוכחית", `<input id="pwCur" type="password" autocomplete="current-password" dir="ltr">`, { id: "pwCur" })}
+          ${fieldHtml("סיסמה חדשה", `<input id="pwNew" type="password" autocomplete="new-password" dir="ltr" minlength="6">`, { id: "pwNew", hint: "(לפחות 6 תווים)" })}
+          ${fieldHtml("שוב את הסיסמה החדשה", `<input id="pwNew2" type="password" autocomplete="new-password" dir="ltr">`, { id: "pwNew2" })}
+        </div>
+        <p class="field__error" id="pwErr" role="alert"></p>
+        <div><button type="button" class="btn btn--ghost btn--small" data-act="changePassword" id="pwBtn"><span class="btn__label">שינוי סיסמה</span><span class="spinner" aria-hidden="true"></span></button></div>` : ""}
+      </section>`;
+    markDirty();
+  }
+
+  function hoursSummaryOf(d) {
+    const saved = CONFIG.hours, savedW = CONFIG.workouts;
+    CONFIG.hours = d.hours; CONFIG.workouts = d.workouts;
+    try { return hoursSummary(); } finally { CONFIG.hours = saved; CONFIG.workouts = savedW; }
+  }
+
+  function markDirty() {
+    const dirty = isDirty();
+    $("#saveBar").hidden = !dirty;
+    root.classList.toggle("has-savebar", dirty);
+  }
+
+  function refreshHours() {
+    $("#hoursBox").innerHTML = hoursRows();
+    $("#hoursHint").textContent = hoursSummaryOf(draft) || "כרגע כל הימים סגורים";
+    markDirty();
+  }
+
+  $("#settingsForm").addEventListener("input", (e) => {
+    const t = e.target;
+    t.closest(".field")?.classList.remove("is-invalid");
+    if (t.dataset.k) {
+      const k = t.dataset.k;
+      draft[k] = t.type === "number" ? Number(t.value) * Number(t.dataset.scale || 1) : t.value;
+    } else if (t.dataset.w != null && t.dataset.f) {
+      const w = draft.workouts[Number(t.dataset.w)], f = t.dataset.f;
+      if (f === "minutes" || f === "price") w[f] = Number(t.value);
+      else if (f === "gear") w.gear = t.value.split(",").map((x) => x.trim()).filter(Boolean);
+      else w[f] = t.value;
+      if (f === "name") $(`[data-preview="${t.dataset.w}"]`).textContent = t.value || "אימון חדש";
+    } else if (t.dataset.c != null) {
+      const c = draft.cities[Number(t.dataset.c)];
+      c[t.dataset.f] = t.dataset.f === "fee" ? Number(t.value) : t.value;
+    } else return;
+    markDirty();
+  });
+
+  $("#settingsForm").addEventListener("click", async (e) => {
+    const chip = e.target.closest(".hchip");
+    if (chip) {
+      const d = Number(chip.dataset.day), h = Number(chip.dataset.h);
+      const hs = new Set(draft.hours[d] || []);
+      hs.has(h) ? hs.delete(h) : hs.add(h);
+      draft.hours[d] = [...hs].sort((a, b) => a - b);
+      chip.setAttribute("aria-pressed", String(hs.has(h)));
+      const row = chip.closest(".hours__row");
+      $(".hours__day small", row).textContent = hs.size ? `${hs.size} שעות` : "סגור";
+      $("#hoursHint").textContent = hoursSummaryOf(draft) || "כרגע כל הימים סגורים";
+      markDirty();
+      return;
+    }
+    const icon = e.target.closest("[data-icon]");
+    if (icon) {
+      draft.workouts[Number(icon.dataset.w)].icon = icon.dataset.icon;
+      $$(`[data-icon][data-w="${icon.dataset.w}"]`).forEach((b) => b.setAttribute("aria-pressed", String(b === icon)));
+      markDirty();
+      return;
+    }
+    const btn = e.target.closest("[data-act]"); if (!btn) return;
+    const act = btn.dataset.act;
+    if (act === "copyWeek") { for (let d = 1; d <= 4; d++) draft.hours[d] = [...draft.hours[0]]; refreshHours(); toast("השעות של יום ראשון הועתקו לב׳–ה׳", "ok"); }
+    if (act === "copyPrev") { const d = Number(btn.dataset.day); draft.hours[d] = [...draft.hours[d - 1]]; refreshHours(); }
+    if (act === "clearDay") { draft.hours[Number(btn.dataset.day)] = []; refreshHours(); }
+    if (act === "addWorkout") {
+      draft.workouts.push({ id: "w" + Date.now().toString(36), name: "", minutes: 60, price: 250, sub: "", desc: "", gear: ["מזרן"], icon: "strength" });
+      renderSettings();
+      const i = draft.workouts.length - 1;
+      $(`#w${i}name`).focus();
+      $(`#w${i}name`).scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
+    }
+    if (act === "delWorkout") { draft.workouts.splice(Number(btn.dataset.w), 1); renderSettings(); }
+    if (act === "addCity") {
+      draft.cities.push({ name: "", fee: 0 });
+      renderSettings();
+      $(`[data-c="${draft.cities.length - 1}"][data-f="name"]`).focus();
+    }
+    if (act === "delCity") { draft.cities.splice(Number(btn.dataset.c), 1); renderSettings(); }
+    if (act === "changePassword") changePassword(btn);
+  });
+
+  function validateDraft() {
+    const errs = [];
+    const bad = (sel, msg) => errs.push({ sel, msg });
+    if ((draft.trainer || "").trim().length < 2) bad('[data-k="trainer"]', "חסר שם מאמן");
+    if (!/^05\d{8}$/.test(normPhone(draft.phoneDisplay || ""))) bad('[data-k="phoneDisplay"]', "מספר נייד צריך להתחיל ב־05 ולהכיל 10 ספרות");
+    if (![0, 1, 2, 3, 4, 5, 6].some((d) => (draft.hours[d] || []).length)) bad("#hoursBox", "צריך לסמן לפחות שעת פעילות אחת");
+    draft.workouts.forEach((w, i) => {
+      if (!(w.name || "").trim()) bad(`[data-w="${i}"][data-f="name"]`, "לאחד האימונים חסר שם");
+      if (!(w.minutes >= 15 && w.minutes <= 180)) bad(`[data-w="${i}"][data-f="minutes"]`, "משך אימון צריך להיות בין 15 ל־180 דקות");
+      if (!(w.price >= 0 && w.price <= 5000)) bad(`[data-w="${i}"][data-f="price"]`, "מחיר צריך להיות בין 0 ל־5,000 ₪");
+    });
+    if (!draft.cities.some((c) => (c.name || "").trim())) bad('[data-c="0"][data-f="name"]', "צריך לפחות עיר אחת");
+    draft.cities.forEach((c, i) => { if (!(c.fee >= 0 && c.fee <= 500)) bad(`[data-c="${i}"][data-f="fee"]`, "תוספת נסיעה בין 0 ל־500 ₪"); });
+    const rules = [["firstTimeDiscount", 0, 0.9, "הנחה בין 0 ל־90%"], ["minLeadHours", 0, 72, "שעות מראש בין 0 ל־72"], ["daysAhead", 7, 180, "ימים קדימה בין 7 ל־180"], ["cancelHours", 0, 72, "שעות לביטול בין 0 ל־72"]];
+    rules.forEach(([k, min, max, msg]) => { if (!(draft[k] >= min && draft[k] <= max)) bad(`[data-k="${k}"]`, msg); });
+    return errs;
+  }
+
+  function cleanDraft() {
+    const c = JSON.parse(JSON.stringify(draft));
+    c.trainer = c.trainer.trim();
+    c.area = (c.area || "").trim();
+    c.phoneDisplay = normPhone(c.phoneDisplay).replace(/^(\d{3})(\d{3})(\d{4})$/, "$1-$2-$3");
+    c.cities = c.cities.map((x) => ({ name: (x.name || "").trim(), fee: Math.round(x.fee) || 0 })).filter((x) => x.name);
+    c.workouts = c.workouts.map((w) => ({ ...w, name: w.name.trim(), sub: (w.sub || "").trim(), desc: (w.desc || "").trim(), minutes: Math.round(w.minutes), price: Math.round(w.price) }));
+    c.firstTimeDiscount = Math.round(c.firstTimeDiscount * 100) / 100;
+    return c;
+  }
+
+  $("#settingsSave").addEventListener("click", async () => {
+    $$("#settingsForm .is-invalid").forEach((x) => x.classList.remove("is-invalid"));
+    const errs = validateDraft();
+    if (errs.length) {
+      errs.forEach(({ sel }) => { const el = $(sel, $("#settingsForm")); (el?.closest(".field") || el)?.classList.add("is-invalid"); });
+      const first = $(errs[0].sel, $("#settingsForm"));
+      first?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "center" });
+      if (first && first.focus) first.focus({ preventScroll: true });
+      if (first) shake(first.closest(".field") || first);
+      toast(errs[0].msg);
+      return;
+    }
+    const cfg = cleanDraft();
+    const btn = $("#settingsSave");
+    btn.classList.add("is-loading"); btn.disabled = true;
+    try {
+      if (online) {
+        const r = await api({ action: "saveConfig", token, config: cfg });
+        applyConfig(r.config);
+      } else {
+        store.set("config", cfg);
+        applyConfig(cfg);
+      }
+      draft = current();
+      renderSettings();
+      toast("נשמר. האתר כבר מציג את הפרטים החדשים", "ok");
+    } catch (err) {
+      if (err.code === "unauthorized") { token = ""; session.set(""); showGate("הכניסה פגה. צריך להקליד סיסמה שוב"); }
+      else toast(err.code === "invalid" ? "השרת דחה חלק מהפרטים. בדקו את השדות ונסו שוב" : "השמירה לא הצליחה. בדקו את החיבור ונסו שוב");
+    } finally {
+      btn.classList.remove("is-loading"); btn.disabled = false;
+    }
+  });
+
+  $("#settingsReset").addEventListener("click", () => { draft = current(); renderSettings(); toast("השינויים בוטלו"); });
+
+  async function changePassword(btn) {
+    const cur = $("#pwCur").value, next = $("#pwNew").value, next2 = $("#pwNew2").value;
+    const errEl = $("#pwErr");
+    errEl.textContent = "";
+    if (!cur) { errEl.textContent = "צריך להקליד את הסיסמה הנוכחית"; return; }
+    if (next.length < 6) { errEl.textContent = "הסיסמה החדשה צריכה לפחות 6 תווים"; return; }
+    if (next !== next2) { errEl.textContent = "הסיסמאות החדשות לא זהות"; return; }
+    btn.classList.add("is-loading"); btn.disabled = true;
+    try {
+      await api({ action: "changePassword", token, current: cur, next });
+      ["#pwCur", "#pwNew", "#pwNew2"].forEach((s) => { $(s).value = ""; });
+      toast("הסיסמה שונתה", "ok");
+    } catch (err) {
+      errEl.textContent = err.code === "wrong_password" ? "הסיסמה הנוכחית לא נכונה" : err.code === "unauthorized" ? "הכניסה פגה. צאו והיכנסו שוב" : "השינוי לא הצליח. נסו שוב";
+    } finally {
+      btn.classList.remove("is-loading"); btn.disabled = false;
+    }
+  }
+
+  addEventListener("beforeunload", (e) => { if (isDirty()) { e.preventDefault(); e.returnValue = ""; } });
+
   addEventListener("hashchange", route);
 
   /* ---------- boot ---------- */
-  renderPick();
+  applyConfig(online ? null : store.get("config", null));
   restoreProfile();
   updateSummary();
   updateNextSlot();
@@ -1429,5 +1832,6 @@
   goTo(1, true);
   route();
   loadTaken();
+  if (online) loadConfig();
   setInterval(() => { updateNextSlot(); refreshBookingsUI(); }, 60e3);
 })();
