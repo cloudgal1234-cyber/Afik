@@ -14,6 +14,8 @@
     minLeadHours: 3,          // אי אפשר לשריין פחות משלוש שעות מראש
     daysAhead: 56,            // שמונה שבועות קדימה
     cancelHours: 12,
+    allowAllCities: true,     // לקבל הזמנות מכל הארץ ולא רק מהערים ברשימה
+    otherCityFee: 50,         // תוספת נסיעה לעיר שלא ברשימה
     // SHA-256 של סיסמת דף הניהול (ברירת מחדל: afik2026). להחלפה ראו README
     adminPasswordHash: "483e66aa775ad9e6e1c34987c9812294acdf5bf3936e8a7d6baec22602da88c3",
     // שעות התחלה לפי יום בשבוע (0 = ראשון)
@@ -64,6 +66,36 @@
     ]
   };
 
+  // כל הערים והמועצות המקומיות בישראל, לבחירת עיר בטופס ההזמנה
+  const IL_CITIES = [
+    "אבו גוש", "אבו סנאן", "אבן יהודה", "אום אל-פחם", "אופקים", "אור יהודה", "אור עקיבא", "אורנית",
+    "אזור", "אילת", "אכסאל", "אליכין", "אלעד", "אלפי מנשה", "אלקנה", "אעבלין",
+    "אפרת", "אריאל", "אשדוד", "אשקלון", "באקה אל-גרבייה", "באר יעקב", "באר שבע", "בועיינה-נוג'ידאת",
+    "בוקעאתא", "ביר אל-מכסור", "בית אל", "בית אריה-עופרים", "בית ג'ן", "בית דגן", "בית שאן", "בית שמש",
+    "ביתר עילית", "בני ברק", "בני עי\"ש", "בנימינה-גבעת עדה", "בסמ\"ה", "בסמת טבעון", "בת ים", "ג'דיידה-מכר",
+    "ג'ולס", "ג'לג'וליה", "ג'סר א-זרקא", "ג'ש (גוש חלב)", "ג'ת", "גבעת זאב", "גבעת שמואל", "גבעתיים",
+    "גדרה", "גן יבנה", "גני תקווה", "דאלית אל-כרמל", "דבוריה", "דייר אל-אסד", "דייר חנא", "דימונה",
+    "הוד השרון", "הר אדר", "הרצליה", "זכרון יעקב", "זרזיר", "חדרה", "חולון", "חורה",
+    "חורפיש", "חיפה", "חצור הגלילית", "חריש", "טבריה", "טובא-זנגרייה", "טורעאן", "טייבה",
+    "טירה", "טירת כרמל", "טמרה", "יבנאל", "יבנה", "יהוד-מונוסון", "יסוד המעלה", "יפיע",
+    "יקנעם עילית", "ירוחם", "ירושלים", "ירכא", "כאבול", "כוכב יאיר-צור יגאל", "כסיפה", "כסרא-סמיע",
+    "כעביה-טבאש-חג'אג'רה", "כפר ברא", "כפר ורדים", "כפר יאסיף", "כפר יונה", "כפר כמא", "כפר כנא", "כפר מנדא",
+    "כפר סבא", "כפר קאסם", "כפר קרע", "כפר שמריהו", "כפר תבור", "כרמיאל", "לוד", "להבים",
+    "לקיה", "מבשרת ציון", "מגאר", "מגד אל-כרום", "מגדל", "מגדל העמק", "מג'דל שמס", "מודיעין עילית",
+    "מודיעין-מכבים-רעות", "מזכרת בתיה", "מטולה", "מיתר", "מסעדה", "מעיליא", "מעלה אדומים", "מעלה אפרים",
+    "מעלה עירון", "מעלות-תרשיחא", "מצפה רמון", "משהד", "נהריה", "נוף הגליל", "נחף", "נס ציונה",
+    "נצרת", "נשר", "נתיבות", "נתניה", "סאג'ור", "סביון", "סח'נין", "ע'ג'ר",
+    "עומר", "עילבון", "עילוט", "עין מאהל", "עין קנייא", "עכו", "עמנואל", "עספיא",
+    "עפולה", "עראבה", "ערד", "ערערה", "ערערה-בנגב", "פוריידיס", "פסוטה", "פקיעין",
+    "פרדס חנה-כרכור", "פרדסיה", "פתח תקווה", "צפת", "קדומים", "קדימה-צורן", "קלנסווה", "קצרין",
+    "קריית אונו", "קריית ארבע", "קריית אתא", "קריית ביאליק", "קריית גת", "קריית טבעון", "קריית ים", "קריית יערים",
+    "קריית מוצקין", "קריית מלאכי", "קריית עקרון", "קריית שמונה", "קרני שומרון", "ראמה", "ראש העין", "ראש פינה",
+    "ראשון לציון", "רהט", "רחובות", "ריינה", "רכסים", "רמלה", "רמת גן", "רמת השרון",
+    "רמת ישי", "רעננה", "שבלי-אום אל-גנם", "שגב-שלום", "שדרות", "שוהם", "שלומי", "שעב",
+    "שפרעם", "תל אביב-יפו", "תל מונד", "תל שבע"
+  ].sort((a, b) => a.localeCompare(b, "he"));
+  const OTHER_CITY = "__other";
+
   const ICONS = {
     strength: '<path d="M6 8v8M3 10v4M18 8v8M21 10v4M6 12h12"/>',
     hiit: '<path d="M13 2 5 14h6l-1 8 8-12h-6l1-8Z"/>',
@@ -73,7 +105,7 @@
     heart: '<path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10Z"/><path d="M8 12h2l1-2 2 4 1-2h2"/>'
   };
   // השדות שאפיק יכול לערוך מדף הניהול. ברירות המחדל נשמרות למקרה שאין הגדרות שמורות
-  const EDITABLE = ["trainer", "phoneDisplay", "area", "hours", "workouts", "cities", "firstTimeDiscount", "minLeadHours", "daysAhead", "cancelHours"];
+  const EDITABLE = ["trainer", "phoneDisplay", "area", "hours", "workouts", "cities", "allowAllCities", "otherCityFee", "firstTimeDiscount", "minLeadHours", "daysAhead", "cancelHours"];
   const pickEditable = (src) => JSON.parse(JSON.stringify(Object.fromEntries(EDITABLE.map((k) => [k, src[k]]))));
 
   /* ---------- helpers ---------- */
@@ -102,6 +134,7 @@
 
   const workoutById = (id) => CONFIG.workouts.find((w) => w.id === id);
   const cityByName = (n) => CONFIG.cities.find((c) => c.name === n);
+  const cityFee = (n) => { const c = cityByName(n); return c ? c.fee : (n && CONFIG.allowAllCities ? CONFIG.otherCityFee : 0); };
   const endTime = (h, minutes) => { const t = h * 60 + minutes; return hhmm(Math.floor(t / 60), t % 60); };
 
   function priceFor(workoutId, firstTime, city) {
@@ -109,7 +142,7 @@
     if (!w) return null;
     const base = w.price;
     const discount = firstTime ? Math.round(base * CONFIG.firstTimeDiscount / 10) * 10 : 0;
-    const fee = cityByName(city)?.fee || 0;
+    const fee = cityFee(city);
     return { base, discount, fee, total: base - discount + fee };
   }
 
@@ -409,16 +442,30 @@
   const fCity = $("#fCity");
   function renderCityOptions() {
     const current = fCity.value;
-    fCity.innerHTML = `<option value="">בחירת עיר</option>` + CONFIG.cities.map((c) => `<option value="${esc(c.name)}">${esc(c.name)}</option>`).join("");
-    if (cityByName(current)) fCity.value = current;
+    const service = [...CONFIG.cities].sort((a, b) => a.name.localeCompare(b.name, "he"));
+    const opt = (name, label = name) => `<option value="${esc(name)}">${esc(label)}</option>`;
+    let html = `<option value="">בחירת עיר</option>`;
+    if (CONFIG.allowAllCities) {
+      const inService = new Set(service.map((c) => c.name));
+      html += `<optgroup label="אזור השירות של ${esc(CONFIG.trainer)}">${service.map((c) => opt(c.name, c.fee ? `${c.name} (+${ils(c.fee)})` : c.name)).join("")}</optgroup>`;
+      html += `<optgroup label="כל הערים בארץ${CONFIG.otherCityFee ? ` (+${ils(CONFIG.otherCityFee)} נסיעה)` : ""}">${IL_CITIES.filter((n) => !inService.has(n)).map((n) => opt(n)).join("")}</optgroup>`;
+      html += opt(OTHER_CITY, "יישוב אחר (קיבוץ, מושב…)");
+    } else {
+      html += service.map((c) => opt(c.name)).join("");
+    }
+    fCity.innerHTML = html;
+    if (current && [...fCity.options].some((o) => o.value === current)) fCity.value = current;
+    updateCityHint();
     const anyFee = CONFIG.cities.some((c) => c.fee);
-    $("#faqCities").textContent = `${CONFIG.cities.map((c) => c.name).join(", ")}.${anyFee ? " בחלק מהערים יש תוספת נסיעה קטנה שמופיעה בזמן ההזמנה." : ""} גרים קצת מחוץ לאזור? כתבו ל${CONFIG.trainer} בוואטסאפ.`;
+    $("#faqCities").textContent = CONFIG.allowAllCities
+      ? `${CONFIG.trainer} מגיע לכל הארץ. באזור הקבוע (${CONFIG.cities.map((c) => c.name).join(", ")})${anyFee ? " יש תוספת נסיעה קטנה רק בחלק מהערים" : " אין תוספת נסיעה"}${CONFIG.otherCityFee ? `, ובשאר הארץ יש תוספת של ${ils(CONFIG.otherCityFee)}` : ""}. התוספת מופיעה בזמן ההזמנה.`
+      : `${CONFIG.cities.map((c) => c.name).join(", ")}.${anyFee ? " בחלק מהערים יש תוספת נסיעה קטנה שמופיעה בזמן ההזמנה." : ""} גרים קצת מחוץ לאזור? כתבו ל${CONFIG.trainer} בוואטסאפ.`;
   }
 
   const fields = {
     fName: { key: "name", test: (v) => v.trim().split(/\s+/).length >= 2 && v.trim().length >= 4, msg: (v) => v.trim() ? "צריך שם פרטי ושם משפחה" : "איך קוראים לך?" },
     fPhone: { key: "phone", test: (v) => /^05\d{8}$/.test(normPhone(v)), msg: (v) => v.trim() ? "מספר נייד ישראלי מתחיל ב־05 ויש בו 10 ספרות" : `לאן ${CONFIG.trainer} ישלח אישור?` },
-    fCity: { key: "city", test: (v) => !!v, msg: () => "לאיזו עיר להגיע?" },
+    fCity: { key: "city", test: (v) => v === OTHER_CITY ? $("#fCityOther").value.trim().length >= 2 : !!v, msg: (v) => v === OTHER_CITY ? "כתבו את שם היישוב" : "לאיזו עיר להגיע?" },
     fStreet: { key: "street", test: (v) => /\d/.test(v) && /[֐-׿a-zA-Z]{2,}/.test(v), msg: (v) => v.trim() ? "חסר מספר בית" : "לאיזו כתובת להגיע?" }
   };
 
@@ -450,10 +497,27 @@
       saveProfile(); updateSummary();
     });
   });
+  function selectedCity() {
+    return fCity.value === OTHER_CITY ? $("#fCityOther").value.trim() : fCity.value;
+  }
+  function updateCityHint() {
+    const other = fCity.value === OTHER_CITY;
+    $("#fCityOther").hidden = !other;
+    const name = selectedCity();
+    const c = cityByName(name);
+    $("#cityHint").textContent = !name ? "" : c
+      ? (c.fee ? `תוספת נסיעה לעיר הזאת: ${ils(c.fee)}` : "בלי תוספת נסיעה")
+      : (CONFIG.otherCityFee ? `מחוץ לאזור הקבוע: תוספת נסיעה ${ils(CONFIG.otherCityFee)}` : "בלי תוספת נסיעה");
+  }
+  $("#fCityOther").addEventListener("input", () => {
+    if (fCity.closest(".field").classList.contains("is-invalid") || $("#fCityOther").value.trim().length >= 2) validateField("fCity");
+    updateCityHint(); saveProfile(); updateSummary();
+  });
   fCity.addEventListener("change", () => {
-    validateField("fCity");
-    const c = cityByName(fCity.value);
-    $("#cityHint").textContent = c ? (c.fee ? `תוספת נסיעה לעיר הזאת: ${ils(c.fee)}` : "בלי תוספת נסיעה") : "";
+    const other = fCity.value === OTHER_CITY;
+    updateCityHint();
+    if (other) { $("#fCityOther").focus(); fCity.closest(".field").classList.remove("is-invalid", "is-valid"); $('[data-for="fCity"]').textContent = ""; }
+    else validateField("fCity");
     saveProfile(); updateSummary("addr");
   });
 
@@ -491,7 +555,7 @@
     return {
       name: $("#fName").value.trim(),
       phone: normPhone($("#fPhone").value),
-      city: fCity.value,
+      city: selectedCity(),
       street: $("#fStreet").value.trim(),
       floor: $("#fFloor").value.trim(),
       code: $("#fCode").value.trim(),
@@ -512,7 +576,13 @@
     if (saved.street) $("#fStreet").value = saved.street;
     if (saved.floor) $("#fFloor").value = saved.floor;
     if (saved.code) $("#fCode").value = saved.code;
-    if (saved.city && cityByName(saved.city)) { fCity.value = saved.city; fCity.dispatchEvent(new Event("change")); }
+    if (saved.city) {
+      const known = [...fCity.options].some((o) => o.value === saved.city && o.value !== OTHER_CITY);
+      if (known) fCity.value = saved.city;
+      else if (CONFIG.allowAllCities) { fCity.value = OTHER_CITY; $("#fCityOther").value = saved.city; }
+      fCity.dispatchEvent(new Event("change"));
+      if (fCity.value === OTHER_CITY) validateField("fCity");
+    }
     Object.keys(fields).forEach((id) => { if ($("#" + id).value && fields[id].test($("#" + id).value)) validateField(id); });
   }
 
@@ -1437,7 +1507,7 @@
     const code = (addr.match(/\(קוד\s*([^)]+)\)/) || [])[1] || "";
     addr = addr.replace(/\(קוד[^)]*\)/, "").trim();
     const parts = addr.split(",").map((x) => x.trim()).filter(Boolean);
-    const cityIdx = parts.findIndex((p) => cityByName(p));
+    const cityIdx = parts.findIndex((p) => cityByName(p) || IL_CITIES.includes(p));
     const city = cityIdx >= 0 ? parts[cityIdx] : (parts.length > 1 ? parts[parts.length - 1] : "");
     const rest = parts.filter((p, i) => p !== city || (cityIdx >= 0 ? i !== cityIdx : i !== parts.length - 1));
     const name = get("שם");
@@ -1618,12 +1688,19 @@
       </section>
 
       <section class="scard">
-        <div class="scard__head"><h2>ערים ותוספת נסיעה</h2><p>רק הערים ברשימה יופיעו בטופס ההזמנה. תוספת 0 = בלי תוספת.</p></div>
+        <div class="scard__head"><h2>ערים ותוספת נסיעה</h2><p>הערים שאתה מגיע אליהן באופן קבוע, ולכל אחת תוספת נסיעה משלה. תוספת 0 = בלי תוספת.</p></div>
+        <label class="switch" for="sAllCities">
+          <input type="checkbox" id="sAllCities" data-k="allowAllCities" ${d.allowAllCities ? "checked" : ""}>
+          <span class="switch__track" aria-hidden="true"><span class="switch__thumb"></span></span>
+          <span class="switch__text"><b>לקבל הזמנות מכל הארץ</b><small>מתאמנים יוכלו לבחור כל עיר בישראל (${IL_CITIES.length} ערים ומועצות) או לכתוב יישוב אחר</small></span>
+        </label>
+        ${d.allowAllCities ? `<div class="sgrid">${fieldHtml("תוספת נסיעה לעיר שלא ברשימה", `<div class="field__suffix"><input id="sOtherFee" type="number" inputmode="numeric" min="0" max="500" data-k="otherCityFee" value="${val(d.otherCityFee)}"><span>₪</span></div>`, { id: "sOtherFee" })}</div>` : ""}
+        <datalist id="ilCities">${IL_CITIES.map((n) => `<option value="${esc(n)}"></option>`).join("")}</datalist>
         <div class="cities">
           <div class="crow crow__head"><span>עיר</span><span>תוספת נסיעה</span><span></span></div>
           ${d.cities.map((c, i) => `
             <div class="crow" style="--i:${i}">
-              <input type="text" data-c="${i}" data-f="name" value="${val(c.name)}" maxlength="40" aria-label="שם העיר">
+              <input type="text" list="ilCities" data-c="${i}" data-f="name" value="${val(c.name)}" maxlength="40" aria-label="שם העיר" placeholder="מתחילים להקליד…">
               <div class="field__suffix"><input type="number" inputmode="numeric" min="0" max="500" data-c="${i}" data-f="fee" value="${val(c.fee)}" aria-label="תוספת נסיעה"><span>₪</span></div>
               ${d.cities.length > 1 ? `<button type="button" class="linkbtn" data-act="delCity" data-c="${i}" aria-label="מחיקת ${val(c.name)}">מחיקה</button>` : "<span></span>"}
             </div>`).join("")}
@@ -1678,7 +1755,8 @@
     t.closest(".field")?.classList.remove("is-invalid");
     if (t.dataset.k) {
       const k = t.dataset.k;
-      draft[k] = t.type === "number" ? Number(t.value) * Number(t.dataset.scale || 1) : t.value;
+      draft[k] = t.type === "checkbox" ? t.checked : t.type === "number" ? Number(t.value) * Number(t.dataset.scale || 1) : t.value;
+      if (t.type === "checkbox") { renderSettings(); return; }
     } else if (t.dataset.w != null && t.dataset.f) {
       const w = draft.workouts[Number(t.dataset.w)], f = t.dataset.f;
       if (f === "minutes" || f === "price") w[f] = Number(t.value);
@@ -1748,6 +1826,7 @@
     });
     if (!draft.cities.some((c) => (c.name || "").trim())) bad('[data-c="0"][data-f="name"]', "צריך לפחות עיר אחת");
     draft.cities.forEach((c, i) => { if (!(c.fee >= 0 && c.fee <= 500)) bad(`[data-c="${i}"][data-f="fee"]`, "תוספת נסיעה בין 0 ל־500 ₪"); });
+    if (draft.allowAllCities && !(draft.otherCityFee >= 0 && draft.otherCityFee <= 500)) bad('[data-k="otherCityFee"]', "תוספת נסיעה בין 0 ל־500 ₪");
     const rules = [["firstTimeDiscount", 0, 0.9, "הנחה בין 0 ל־90%"], ["minLeadHours", 0, 72, "שעות מראש בין 0 ל־72"], ["daysAhead", 7, 180, "ימים קדימה בין 7 ל־180"], ["cancelHours", 0, 72, "שעות לביטול בין 0 ל־72"]];
     rules.forEach(([k, min, max, msg]) => { if (!(draft[k] >= min && draft[k] <= max)) bad(`[data-k="${k}"]`, msg); });
     return errs;

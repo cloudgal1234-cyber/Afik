@@ -103,6 +103,7 @@ function sanitizeConfig(c) {
   return {
     trainer, phoneDisplay: phone.replace(/^(\d{3})(\d{3})(\d{4})$/, "$1-$2-$3"), area: str(c.area, 60),
     hours, workouts, cities, firstTimeDiscount: Math.round(discount * 100) / 100,
+    allowAllCities: c.allowAllCities !== false, otherCityFee: c.otherCityFee == null ? 0 : int(c.otherCityFee, 0, 500),
     minLeadHours: int(c.minLeadHours, 0, 72), daysAhead: int(c.daysAhead, 7, 180), cancelHours: int(c.cancelHours, 0, 72)
   };
 }
