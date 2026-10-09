@@ -1,0 +1,7 @@
+{
+  "cleanUrls": true,
+  "redirects": [{ "source": "/main", "destination": "/#main", "permanent": false }],
+  "headers": [
+    { "source": "/api/(.*)", "headers": [{ "key": "X-Robots-Tag", "value": "noindex" }] }
+  ]
+}
