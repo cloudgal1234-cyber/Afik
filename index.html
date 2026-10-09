@@ -382,6 +382,80 @@
 
 <div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
 <canvas class="confetti" id="confetti" aria-hidden="true"></canvas>
+
+<!-- ADMIN (#main) -->
+<section class="admin" id="admin" hidden>
+  <div class="gate" id="gate">
+    <form class="gate__card" id="gateForm" novalidate>
+      <div class="gate__lock" id="gateLock" aria-hidden="true">
+        <svg viewBox="0 0 48 48" width="64" height="64"><path class="gate__shackle" d="M15 21v-6a9 9 0 0 1 18 0v6"/><rect class="gate__body" x="9" y="21" width="30" height="21" rx="5"/><circle class="gate__hole" cx="24" cy="31" r="2.6"/><path class="gate__hole" d="M24 33v4"/></svg>
+      </div>
+      <h1 class="gate__title">אזור ניהול</h1>
+      <p class="gate__sub">הכניסה לאפיק בלבד</p>
+      <div class="field gate__field">
+        <label for="gatePass">סיסמה</label>
+        <div class="gate__input">
+          <input id="gatePass" type="password" autocomplete="current-password" dir="ltr" required>
+          <button type="button" class="gate__eye" id="gateEye" aria-label="הצגת הסיסמה" aria-pressed="false">
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/><path class="gate__slash" d="M4 4l16 16"/></svg>
+          </button>
+        </div>
+        <p class="field__error" id="gateErr" role="alert"></p>
+      </div>
+      <button type="submit" class="btn btn--primary gate__go" id="gateGo" data-ripple>
+        <span class="btn__label">כניסה</span><span class="spinner" aria-hidden="true"></span>
+      </button>
+      <a class="gate__back" href="#top">חזרה לאתר</a>
+    </form>
+  </div>
+
+  <div class="dash" id="dash" hidden>
+    <header class="dash__top">
+      <div class="wrap dash__topin">
+        <p class="logo"><span class="logo__word">אפיק</span><span class="logo__dot" aria-hidden="true"></span><span class="logo__tag">ניהול</span></p>
+        <div class="dash__actions">
+          <a class="btn btn--small btn--ghost" href="#top">לאתר</a>
+          <button type="button" class="btn btn--small btn--ghost" id="logoutBtn">יציאה</button>
+        </div>
+      </div>
+    </header>
+    <div class="wrap dash__main">
+      <div class="dash__hello">
+        <p class="eyebrow" id="dashDate"></p>
+        <h1 id="dashHi">שלום, אפיק</h1>
+      </div>
+      <ul class="kpis" id="kpis"></ul>
+      <div class="dash__grid">
+        <section class="agenda" aria-labelledby="agTitle">
+          <div class="agenda__head">
+            <h2 id="agTitle">יומן אימונים</h2>
+            <div class="chips" role="radiogroup" aria-label="סינון" id="agFilter">
+              <button type="button" class="chip" role="radio" data-f="upcoming" aria-checked="true">קרובים</button>
+              <button type="button" class="chip" role="radio" data-f="today" aria-checked="false">היום</button>
+              <button type="button" class="chip" role="radio" data-f="past" aria-checked="false">היסטוריה</button>
+              <button type="button" class="chip" role="radio" data-f="cancelled" aria-checked="false">בוטלו</button>
+            </div>
+          </div>
+          <div id="agenda" class="agenda__list"></div>
+        </section>
+        <aside class="import" aria-labelledby="imTitle">
+          <h2 id="imTitle">הוספה מהודעת וואטסאפ</h2>
+          <p class="import__lead">מתאמן שלח הזמנה מהאתר? מעתיקים את ההודעה שלו לכאן והאימון נכנס ליומן.</p>
+          <div class="field">
+            <label for="importText">ההודעה מהמתאמן</label>
+            <textarea id="importText" rows="9" placeholder="היי אפיק, שריינתי אימון באתר…"></textarea>
+          </div>
+          <div class="import__preview" id="importPreview" aria-live="polite"></div>
+          <div class="import__actions">
+            <button type="button" class="btn btn--primary btn--small" id="importBtn" disabled>הוספה ליומן</button>
+            <button type="button" class="btn btn--ghost btn--small" id="importSample">הודעה לדוגמה</button>
+          </div>
+        </aside>
+      </div>
+      <p class="dash__note">היומן נשמר בדפדפן של המכשיר הזה. אימון שמתאמן שריין מהטלפון שלו מגיע לכאן רק דרך הודעת הוואטסאפ.</p>
+    </div>
+  </div>
+</section>
 <!--BODY-END-->
 <script src="app.js"></script>
 </body>

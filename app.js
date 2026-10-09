@@ -11,6 +11,8 @@
     minLeadHours: 3,          // אי אפשר לשריין פחות משלוש שעות מראש
     daysAhead: 56,            // שמונה שבועות קדימה
     cancelHours: 12,
+    // SHA-256 של סיסמת דף הניהול (ברירת מחדל: afik2026). להחלפה ראו README
+    adminPasswordHash: "483e66aa775ad9e6e1c34987c9812294acdf5bf3936e8a7d6baec22602da88c3",
     // שעות התחלה לפי יום בשבוע (0 = ראשון)
     hours: {
       0: [6, 7, 8, 9, 10, 16, 17, 18, 19, 20, 21],
@@ -106,7 +108,7 @@
   let bookings = store.get("bookings", []);
 
   function isTaken(iso, h) {
-    if (bookings.some((b) => b.date === iso && b.time === h)) return true;
+    if (bookings.some((b) => b.date === iso && b.time === h && b.status !== "cancelled")) return true;
     const d = fromISO(iso);
     const dow = d.getDay();
     const busyRate = dow === 5 ? 0.45 : (h >= 18 && h <= 20 ? 0.55 : 0.32);
@@ -641,7 +643,8 @@
       d.notes ? `הערות: ${d.notes}` : "",
       b.firstTime ? "זה האימון הראשון שלי" : "",
       `מחיר: ${ils(b.price)}`,
-      `שם: ${d.name}`
+      `שם: ${d.name}`,
+      d.phone ? `טלפון: ${d.phone.replace(/^(\d{3})(\d{3})(\d{4})$/, "$1-$2-$3")}` : ""
     ].filter(Boolean).join("\n");
   }
   const waUrl = (text) => `https://wa.me/${CONFIG.whatsapp}?text=${encodeURIComponent(text)}`;
@@ -714,7 +717,7 @@
 
   function renderDrawer() {
     const list = $("#drawerList");
-    const sorted = [...bookings].sort((a, b) => bookingStart(a) - bookingStart(b));
+    const sorted = bookings.filter((b) => b.status !== "cancelled").sort((a, b) => bookingStart(a) - bookingStart(b));
     const upcoming = sorted.filter((b) => bookingStart(b) > Date.now());
     const past = sorted.filter((b) => bookingStart(b) <= Date.now()).reverse().slice(0, 5);
     if (!sorted.length) {
@@ -788,7 +791,7 @@
   });
 
   function refreshBookingsUI(bump) {
-    const n = bookings.filter((b) => bookingStart(b) > Date.now()).length;
+    const n = bookings.filter((b) => b.status !== "cancelled" && bookingStart(b) > Date.now()).length;
     const badge = $("#myCount");
     badge.hidden = !n; badge.textContent = n;
     if (bump) { badge.classList.remove("bump"); void badge.offsetWidth; badge.classList.add("bump"); }
@@ -855,6 +858,380 @@
     })(t0);
   }
 
+  /* ---------- admin: #main ---------- */
+  // אזהרה: זו הגנה בצד הדפדפן בלבד. מי שיודע לקרוא קוד יכול לעקוף אותה, ולכן אין לשמור כאן מידע רגיש
+  function sha256(str) {
+    const K = [0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2];
+    const bytes = new TextEncoder().encode(str);
+    const len = bytes.length;
+    const total = ((len + 9 + 63) >> 6) << 6;
+    const buf = new Uint8Array(total); buf.set(bytes); buf[len] = 0x80;
+    const view = new DataView(buf.buffer);
+    view.setUint32(total - 8, Math.floor(len / 0x20000000)); view.setUint32(total - 4, (len * 8) >>> 0);
+    const H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+    const W = new Uint32Array(64);
+    const rotr = (x, n) => (x >>> n) | (x << (32 - n));
+    for (let off = 0; off < total; off += 64) {
+      for (let i = 0; i < 16; i++) W[i] = view.getUint32(off + i * 4);
+      for (let i = 16; i < 64; i++) {
+        const s0 = rotr(W[i - 15], 7) ^ rotr(W[i - 15], 18) ^ (W[i - 15] >>> 3);
+        const s1 = rotr(W[i - 2], 17) ^ rotr(W[i - 2], 19) ^ (W[i - 2] >>> 10);
+        W[i] = W[i - 16] + s0 + W[i - 7] + s1;
+      }
+      let [a, b, c, d, e, f, g, h] = H;
+      for (let i = 0; i < 64; i++) {
+        const t1 = (h + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + W[i]) | 0;
+        const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) | 0;
+        h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+      }
+      [a, b, c, d, e, f, g, h].forEach((x, j) => { H[j] = (H[j] + x) | 0; });
+    }
+    return H.map((x) => (x >>> 0).toString(16).padStart(8, "0")).join("");
+  }
+
+  const session = {
+    get() { try { return sessionStorage.getItem("afik:admin") === "1"; } catch { return false; } },
+    set(on) { try { on ? sessionStorage.setItem("afik:admin", "1") : sessionStorage.removeItem("afik:admin"); } catch { /* blocked */ } }
+  };
+  let authed = session.get();
+  let wasAdmin = false;
+  let failCount = 0, lockUntil = 0, lockTimer = null;
+  let agFilter = "upcoming";
+
+  function route() {
+    const isAdmin = location.hash === "#main";
+    root.classList.toggle("is-admin", isAdmin);
+    $("#admin").hidden = !isAdmin;
+    if (isAdmin) {
+      if (drawer && !drawer.hidden) closeDrawer();
+      document.title = "אפיק · ניהול";
+      authed ? showDash() : showGate();
+      scrollTo(0, 0);
+    } else if (wasAdmin) {
+      document.title = "קביעת אימונים אצל אפיק";
+      refreshBookingsUI(); updateNextSlot();
+      if (state.step === 2) { renderCalendar(); renderSlots(); }
+    }
+    wasAdmin = isAdmin;
+  }
+
+  function showGate() {
+    $("#dash").hidden = true;
+    const g = $("#gate");
+    g.hidden = false; g.classList.remove("is-open");
+    $("#gatePass").value = ""; $("#gateErr").textContent = "";
+    $("#gatePass").closest(".field").classList.remove("is-invalid");
+    setTimeout(() => $("#gatePass").focus(), 80);
+  }
+
+  function showDash() {
+    $("#gate").hidden = true;
+    $("#dash").hidden = false;
+    renderDash();
+  }
+
+  $("#gateEye").addEventListener("click", (e) => {
+    const btn = e.currentTarget, inp = $("#gatePass");
+    const show = inp.type === "password";
+    inp.type = show ? "text" : "password";
+    btn.setAttribute("aria-pressed", String(show));
+    btn.setAttribute("aria-label", show ? "הסתרת הסיסמה" : "הצגת הסיסמה");
+    inp.focus();
+  });
+
+  function lockTick() {
+    const left = Math.ceil((lockUntil - Date.now()) / 1000);
+    if (left <= 0) {
+      clearInterval(lockTimer); lockTimer = null;
+      $("#gateGo").disabled = false; $("#gateErr").textContent = "אפשר לנסות שוב";
+      return;
+    }
+    $("#gateErr").textContent = `יותר מדי ניסיונות. אפשר לנסות שוב בעוד ${left} שניות`;
+  }
+
+  $("#gateForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    if (Date.now() < lockUntil) return;
+    const inp = $("#gatePass"), field = inp.closest(".field"), btn = $("#gateGo");
+    if (!inp.value) { $("#gateErr").textContent = "צריך להקליד סיסמה"; shake(field); return; }
+    btn.classList.add("is-loading"); btn.disabled = true;
+    setTimeout(() => {
+      btn.classList.remove("is-loading"); btn.disabled = false;
+      if (sha256(inp.value) === CONFIG.adminPasswordHash) {
+        authed = true; session.set(true); failCount = 0;
+        field.classList.remove("is-invalid");
+        $("#gateErr").textContent = "";
+        $("#gate").classList.add("is-open");
+        setTimeout(showDash, reduceMotion ? 0 : 950);
+        return;
+      }
+      failCount++;
+      field.classList.add("is-invalid"); shake($(".gate__card"));
+      inp.select();
+      if (failCount >= 5) {
+        failCount = 0; lockUntil = Date.now() + 30e3; btn.disabled = true;
+        lockTick(); lockTimer = setInterval(lockTick, 1000);
+      } else {
+        $("#gateErr").textContent = `הסיסמה לא נכונה${failCount >= 3 ? ` · נשארו ${5 - failCount} ניסיונות` : ""}`;
+      }
+    }, reduceMotion ? 50 : 450);
+  });
+
+  $("#gatePass").addEventListener("input", () => {
+    if (Date.now() < lockUntil) return;
+    $("#gatePass").closest(".field").classList.remove("is-invalid");
+    $("#gateErr").textContent = "";
+  });
+
+  $("#logoutBtn").addEventListener("click", () => {
+    authed = false; session.set(false);
+    showGate(); toast("יצאת מאזור הניהול");
+  });
+
+  /* dashboard */
+  const isActive = (b) => b.status !== "cancelled";
+  const bookingEnd = (b) => new Date(bookingStart(b).getTime() + (b.minutes || 60) * 60e3);
+  const fmtFull = new Intl.DateTimeFormat("he-IL", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const fmtPhone = (p) => (p || "").replace(/^(\d{3})(\d{3})(\d{4})$/, "$1-$2-$3");
+  const intlPhone = (p) => (p || "").replace(/\D/g, "").replace(/^0/, "972");
+
+  function greeting() {
+    const h = new Date().getHours();
+    if (h >= 5 && h < 12) return "בוקר טוב";
+    if (h >= 12 && h < 17) return "צהריים טובים";
+    if (h >= 17 && h < 22) return "ערב טוב";
+    return "לילה טוב";
+  }
+
+  function renderDash() {
+    $("#dashDate").textContent = fmtFull.format(new Date());
+    $("#dashHi").textContent = `${greeting()}, ${CONFIG.trainer}`;
+    renderKpis(); renderAgenda(); renderImportPreview();
+  }
+
+  function renderKpis() {
+    const t0 = today0(), now = Date.now();
+    const todayIso = toISO(t0);
+    const weekStart = t0;
+    const weekEnd = new Date(t0); weekEnd.setDate(t0.getDate() + 7);
+    const active = bookings.filter(isActive);
+    const today = active.filter((b) => b.date === todayIso);
+    const week = active.filter((b) => { const d = fromISO(b.date); return d >= weekStart && d < weekEnd; });
+    const revenue = week.reduce((s, b) => s + (b.price || 0), 0);
+    const next = active.filter((b) => bookingStart(b) > now).sort((a, b) => bookingStart(a) - bookingStart(b))[0];
+    const people = new Set(active.map((b) => b.details.phone || b.details.name)).size;
+    const items = [
+      ["היום", today.length, today.length ? `הראשון ב־${hhmm(Math.min(...today.map((b) => b.time)))}` : "יום פנוי"],
+      ["7 הימים הקרובים", week.length, week.length === 1 ? "אימון אחד" : "אימונים"],
+      ["הכנסה צפויה ב־7 ימים", ils(revenue), people ? `${people} מתאמנים ביומן` : ""],
+      ["האימון הבא", next ? hhmm(next.time) : "—", next ? `${friendlyDay(next.date)} · ${next.details.name.split(" ")[0]}` : "אין אימונים קרובים"]
+    ];
+    $("#kpis").innerHTML = items.map(([label, val, sub], i) => `<li style="--i:${i}"><span>${label}</span><b>${esc(String(val))}</b>${sub ? `<small>${esc(sub)}</small>` : ""}</li>`).join("");
+  }
+
+  function agendaList() {
+    const now = Date.now(), todayIso = toISO(today0());
+    const byStart = (a, b) => bookingStart(a) - bookingStart(b);
+    if (agFilter === "today") return bookings.filter((b) => b.date === todayIso).sort(byStart);
+    if (agFilter === "past") return bookings.filter((b) => isActive(b) && bookingEnd(b) <= now).sort(byStart).reverse();
+    if (agFilter === "cancelled") return bookings.filter((b) => !isActive(b)).sort(byStart).reverse();
+    return bookings.filter((b) => isActive(b) && bookingEnd(b) > now).sort(byStart);
+  }
+
+  function renderAgenda() {
+    const list = agendaList();
+    const box = $("#agenda");
+    if (!list.length) {
+      const msg = { upcoming: "אין אימונים קרובים ביומן.", today: "אין אימונים היום.", past: "עוד אין אימונים שהסתיימו.", cancelled: "אין אימונים שבוטלו." }[agFilter];
+      box.innerHTML = `<div class="empty">${svg('<path d="M7 3v3m10-3v3M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z"/>', 56)}<p>${msg}</p>${agFilter === "upcoming" ? "<p>מדביקים הודעת הזמנה מוואטסאפ בטופס שבצד, או לוחצים על \"הודעה לדוגמה\" כדי לראות איך זה עובד.</p>" : ""}</div>`;
+      return;
+    }
+    const groups = new Map();
+    list.forEach((b) => { if (!groups.has(b.date)) groups.set(b.date, []); groups.get(b.date).push(b); });
+    let i = 0;
+    box.innerHTML = [...groups].map(([date, items]) => {
+      const sum = items.filter(isActive).reduce((s, b) => s + (b.price || 0), 0);
+      const label = friendlyDay(date);
+      return `
+        <div class="agday">
+          <div class="agday__head"><h3>${esc(label)}${label !== fmtLong.format(fromISO(date)) ? ` · ${esc(fmtLong.format(fromISO(date)))}` : ""}</h3><span>${items.length} ${items.length === 1 ? "אימון" : "אימונים"}${sum ? ` · ${ils(sum)}` : ""}</span></div>
+          ${items.map((b) => agItem(b, i++)).join("")}
+        </div>`;
+    }).join("");
+  }
+
+  function agItem(b, i) {
+    const w = workoutById(b.workoutId), d = b.details, now = Date.now();
+    const past = bookingEnd(b) <= now;
+    const isNew = !past && isActive(b) && now - (b.createdAt || 0) < 24 * 3600e3;
+    const pills = [
+      b.status === "cancelled" ? `<span class="pill pill--cancel">בוטל</span>` : "",
+      b.status === "done" ? `<span class="pill pill--done">בוצע</span>` : "",
+      past && isActive(b) && b.status !== "done" ? `<span class="pill">ממתין לסימון</span>` : "",
+      isNew ? `<span class="pill pill--new">חדש</span>` : "",
+      b.firstTime ? `<span class="pill pill--first">היכרות</span>` : ""
+    ].join("");
+    const addr = [d.street, d.floor, d.city].filter(Boolean).join(", ");
+    const remind = `היי ${d.name.split(" ")[0]}, כאן ${CONFIG.trainer} 👋\nמאשר את האימון ${friendlyDay(b.date) === fmtLong.format(fromISO(b.date)) ? "ב" + friendlyDay(b.date) : friendlyDay(b.date)} ב־${hhmm(b.time)}${d.street ? ` ב${d.street}` : ""}.\nלהכין שטח של 2×2 מ׳, מים ומגבת. נתראה!`;
+    const actions = b.status === "cancelled"
+      ? `<button type="button" class="btn btn--ghost" data-ag="restore" data-id="${b.id}">שחזור</button>`
+      : `${d.phone ? `<a class="btn btn--ghost" href="https://wa.me/${intlPhone(d.phone)}?text=${encodeURIComponent(remind)}" target="_blank" rel="noopener">אישור בוואטסאפ</a>` : ""}
+         ${b.status !== "done" ? `<button type="button" class="btn btn--ghost" data-ag="done" data-id="${b.id}">סימון כבוצע</button>` : `<button type="button" class="btn btn--ghost" data-ag="undone" data-id="${b.id}">ביטול סימון</button>`}
+         ${!past ? `<button type="button" class="btn btn--ghost" data-ag="cancel" data-id="${b.id}">ביטול אימון</button>` : ""}`;
+    return `
+      <article class="agitem ${b.status === "cancelled" ? "is-cancelled" : ""} ${b.status === "done" ? "is-done" : ""}" style="--i:${i}" data-id="${b.id}">
+        <div class="agitem__time"><b dir="ltr">${hhmm(b.time)}</b><span dir="ltr">עד ${endTime(b.time, b.minutes || 60)}</span></div>
+        <div class="agitem__top"><span class="agitem__name">${esc(d.name)}</span>${pills}</div>
+        <p class="agitem__meta"><b>${esc(w ? w.name : "אימון")}</b> · ${b.minutes || 60} דק׳ · ${ils(b.price || 0)}${d.phone ? ` · <span dir="ltr">${esc(fmtPhone(d.phone))}</span>` : ""}</p>
+        <p class="agitem__meta">${esc(addr)}${d.code ? ` · קוד <span dir="ltr">${esc(d.code)}</span>` : ""}${d.space ? ` · ב${esc(d.space)}` : ""}${d.goals && d.goals.length ? ` · ${d.goals.map(esc).join(", ")}` : ""}</p>
+        ${d.notes ? `<p class="agitem__notes">${esc(d.notes)}</p>` : ""}
+        <div class="agitem__actions">${actions}</div>
+      </article>`;
+  }
+
+  function saveBookings() {
+    store.set("bookings", bookings);
+    renderKpis();
+  }
+
+  $("#agFilter").addEventListener("click", (e) => {
+    const c = e.target.closest(".chip"); if (!c) return;
+    agFilter = c.dataset.f;
+    $$(".chip", $("#agFilter")).forEach((x) => x.setAttribute("aria-checked", String(x === c)));
+    renderAgenda();
+  });
+
+  $("#agenda").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-ag]"); if (!btn) return;
+    const b = bookings.find((x) => x.id === btn.dataset.id); if (!b) return;
+    const act = btn.dataset.ag;
+    if (act === "cancel" && !btn.dataset.armed) {
+      btn.dataset.armed = "1"; btn.textContent = "לחיצה נוספת מבטלת";
+      btn.classList.remove("btn--ghost"); btn.classList.add("btn--danger");
+      setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = "ביטול אימון"; btn.classList.add("btn--ghost"); btn.classList.remove("btn--danger"); } }, 3500);
+      return;
+    }
+    if (act === "restore" && bookings.some((x) => x !== b && isActive(x) && x.date === b.date && x.time === b.time)) {
+      toast("יש כבר אימון אחר באותה שעה"); return;
+    }
+    const card = btn.closest(".agitem");
+    const apply = () => {
+      if (act === "cancel") { b.status = "cancelled"; toast(`האימון של ${b.details.name.split(" ")[0]} בוטל`); }
+      if (act === "restore") { delete b.status; toast("האימון חזר ליומן", "ok"); }
+      if (act === "done") { b.status = "done"; toast("סומן כבוצע", "ok"); }
+      if (act === "undone") { delete b.status; }
+      saveBookings(); renderAgenda();
+    };
+    const leaves = (act === "cancel" && agFilter !== "today") || (act === "restore" && agFilter === "cancelled");
+    if (leaves && !reduceMotion) { card.classList.add("is-removing"); setTimeout(apply, 280); } else apply();
+  });
+
+  /* import from WhatsApp text */
+  const MONTHS = ["ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני", "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר"];
+
+  function parseMessage(text) {
+    const get = (label) => { const m = text.match(new RegExp(`^\\s*${label}\\s*:\\s*(.+)$`, "m")); return m ? m[1].trim() : ""; };
+    const errors = [];
+    const wLine = get("אימון");
+    const w = CONFIG.workouts.find((x) => wLine.startsWith(x.name)) || CONFIG.workouts.find((x) => wLine.includes(x.name));
+    const minutes = Number((wLine.match(/(\d+)\s*דק/) || [])[1]) || (w ? w.minutes : 60);
+    const when = get("מתי");
+    const dm = when.match(/(\d{1,2})\s+ב([֐-׿]+)/);
+    const tm = when.match(/(\d{1,2}):(\d{2})/);
+    let date = null;
+    if (dm && MONTHS.includes(dm[2])) {
+      const t0 = today0();
+      let d = new Date(t0.getFullYear(), MONTHS.indexOf(dm[2]), Number(dm[1]));
+      if (d < new Date(t0.getFullYear(), t0.getMonth(), t0.getDate() - 30)) d = new Date(t0.getFullYear() + 1, d.getMonth(), d.getDate());
+      date = toISO(d);
+    }
+    const time = tm ? Number(tm[1]) : null;
+    let addr = get("כתובת");
+    const code = (addr.match(/\(קוד\s*([^)]+)\)/) || [])[1] || "";
+    addr = addr.replace(/\(קוד[^)]*\)/, "").trim();
+    const parts = addr.split(",").map((x) => x.trim()).filter(Boolean);
+    const cityIdx = parts.findIndex((p) => cityByName(p));
+    const city = cityIdx >= 0 ? parts[cityIdx] : (parts.length > 1 ? parts[parts.length - 1] : "");
+    const rest = parts.filter((p, i) => p !== city || (cityIdx >= 0 ? i !== cityIdx : i !== parts.length - 1));
+    const name = get("שם");
+    const phone = normPhone(get("טלפון"));
+    const price = Number(get("מחיר").replace(/[^\d]/g, "")) || null;
+    if (!date) errors.push("לא מצאתי תאריך (שורת \"מתי\")");
+    if (time == null) errors.push("לא מצאתי שעה");
+    if (!name) errors.push("לא מצאתי שם (שורת \"שם\")");
+    const id = get("מספר הזמנה") || "AF-" + Math.random().toString(36).slice(2, 6).toUpperCase();
+    if (bookings.some((b) => b.id === id)) errors.push(`הזמנה ${id} כבר נמצאת ביומן`);
+    const fallbackPrice = w ? priceFor(w.id, text.includes("האימון הראשון שלי"), city).total : 0;
+    return {
+      errors,
+      booking: {
+        id, workoutId: w ? w.id : CONFIG.workouts[0].id, date, time, minutes,
+        price: price || fallbackPrice, firstTime: text.includes("האימון הראשון שלי"),
+        details: {
+          name, phone, city, street: rest[0] || "", floor: rest.slice(1).join(", "), code,
+          notes: get("הערות"), space: get("איפה מתאמנים") || null,
+          goals: get("מטרות") ? get("מטרות").split(",").map((x) => x.trim()).filter(Boolean) : []
+        },
+        createdAt: Date.now(), source: "whatsapp"
+      }
+    };
+  }
+
+  let parsed = null;
+  function renderImportPreview() {
+    const text = $("#importText").value.trim();
+    const box = $("#importPreview");
+    parsed = null;
+    $("#importBtn").disabled = true;
+    box.classList.remove("is-bad");
+    if (!text) { box.innerHTML = ""; return; }
+    const r = parseMessage(text);
+    if (r.errors.length) {
+      box.classList.add("is-bad");
+      box.innerHTML = r.errors.map((e) => `<span>${esc(e)}</span>`).join("");
+      return;
+    }
+    const b = r.booking, w = workoutById(b.workoutId);
+    const clash = bookings.find((x) => isActive(x) && x.date === b.date && x.time === b.time);
+    box.innerHTML = `
+      <b>${esc(b.details.name)} · ${esc(w.name)}</b>
+      <span>${esc(fmtLong.format(fromISO(b.date)))}, ${hhmm(b.time)}–${endTime(b.time, b.minutes)}</span>
+      <span>${esc([b.details.street, b.details.city].filter(Boolean).join(", "))} · ${ils(b.price)}</span>
+      ${clash ? `<span>שימו לב: באותה שעה כבר יש אימון עם ${esc(clash.details.name)}</span>` : ""}`;
+    parsed = b;
+    $("#importBtn").disabled = false;
+  }
+
+  let importTimer = null;
+  $("#importText").addEventListener("input", () => { clearTimeout(importTimer); importTimer = setTimeout(renderImportPreview, 200); });
+  $("#importText").addEventListener("paste", () => setTimeout(renderImportPreview, 0));
+
+  $("#importBtn").addEventListener("click", () => {
+    if (!parsed) return;
+    bookings.push(parsed);
+    saveBookings();
+    toast(`${parsed.details.name.split(" ")[0]} נוסף/ה ליומן`, "ok");
+    $("#importText").value = "";
+    agFilter = "upcoming";
+    $$(".chip", $("#agFilter")).forEach((x) => x.setAttribute("aria-checked", String(x.dataset.f === "upcoming")));
+    renderAgenda(); renderImportPreview();
+  });
+
+  $("#importSample").addEventListener("click", () => {
+    const n = nextFree();
+    if (!n) { toast("אין שעה פנויה לדוגמה"); return; }
+    const sample = {
+      id: "AF-" + Math.random().toString(36).slice(2, 6).toUpperCase(),
+      workoutId: "mobility", date: n.iso, time: n.h, minutes: 60, price: 260, firstTime: false,
+      details: { name: "דנה כהן (דוגמה)", phone: "0521234567", city: "רמת גן", street: "ביאליק 12", floor: "קומה 3", code: "1234#", notes: "כאב בגב התחתון אחרי ישיבה ארוכה", space: "סלון", goals: ["כאבי גב", "גמישות"] }
+    };
+    $("#importText").value = waText(sample);
+    renderImportPreview();
+    $("#importText").focus();
+  });
+
+  addEventListener("hashchange", route);
+
   /* ---------- boot ---------- */
   renderPick();
   restoreProfile();
@@ -862,5 +1239,6 @@
   updateNextSlot();
   refreshBookingsUI();
   goTo(1, true);
+  route();
   setInterval(() => { updateNextSlot(); refreshBookingsUI(); }, 60e3);
 })();
