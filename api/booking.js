@@ -156,6 +156,14 @@ export default async function handler(req, res) {
   res.setHeader("Cache-Control", "no-store");
   try {
     if (req.method === "GET") {
+      if (req.query.action === "health") {
+        // בדיקת הגדרות בלי לחשוף סודות: עוזר להבין למה השרת לא עובד
+        const health = { ok: true, password: !!process.env.ADMIN_PASSWORD, blobToken: !!process.env.BLOB_READ_WRITE_TOKEN, storage: "ok" };
+        try { const { data } = await readDb(); health.bookings = data.bookings.length; }
+        catch (err) { health.ok = false; health.storage = String(err && err.message || err).slice(0, 300); }
+        if (!health.password || !health.blobToken) health.ok = false;
+        return res.status(200).json(health);
+      }
       if (req.query.action === "slots") {
         // רק תאריך ושעה, בלי פרטים אישיים
         const today = todayIL();
@@ -192,6 +200,6 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: false, error: err.code });
     }
     console.error(err);
-    return res.status(500).json({ ok: false, error: "server_error" });
+    return res.status(500).json({ ok: false, error: "server_error", detail: String(err && err.message || err).slice(0, 200) });
   }
 }

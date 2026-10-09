@@ -116,8 +116,10 @@
 
   async function api(payload) {
     const res = await fetch(API, { method: "POST", body: JSON.stringify(payload) });
-    const data = await res.json();
-    if (!data.ok) { const err = new Error(data.error || "error"); err.code = data.error; throw err; }
+    let data;
+    try { data = await res.json(); }
+    catch { const err = new Error("bad_response"); err.code = `http_${res.status}`; throw err; }
+    if (!data.ok) { const err = new Error(data.detail || data.error || "error"); err.code = data.error; err.detail = data.detail; throw err; }
     return data;
   }
 
@@ -1104,6 +1106,8 @@
       if (err.code === "wrong_password") gateFail();
       else if (err.code === "locked") startLock(600);
       else if (err.code === "no_password_set") $("#gateErr").textContent = "עוד לא הוגדרה סיסמה בשרת (משתנה הסביבה ADMIN_PASSWORD ב-Vercel)";
+      else if (err.code === "server_error") $("#gateErr").textContent = `שגיאה בשרת: ${err.detail || "לא ידוע"}. לבדיקה: ${location.origin}/api/booking?action=health`;
+      else if (err.code && err.code.startsWith("http_")) $("#gateErr").textContent = `השרת לא נמצא (${err.code.slice(5)}). לבדיקה: ${location.origin}/api/booking?action=health`;
       else $("#gateErr").textContent = "אין חיבור לשרת. בדקו את האינטרנט ונסו שוב";
     }
   });
