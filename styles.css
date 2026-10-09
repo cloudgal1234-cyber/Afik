@@ -651,3 +651,35 @@ html.is-admin .skip, html.is-admin .topbar, html.is-admin main, html.is-admin .f
   .agitem__time { grid-row: auto; display: flex; gap: 8px; align-items: baseline; }
   .agitem__actions, .agitem__notes { grid-column: 1; }
 }
+
+/* Admin: next-up card, address, nav */
+.banner { display: grid; gap: 4px; padding: 14px 18px; border-radius: var(--r-m); background: color-mix(in oklab, var(--warn) 16%, var(--surface)); border: 1px solid color-mix(in oklab, var(--warn) 45%, transparent); font-size: 14px; }
+.nextup { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 24px; padding: 24px; border-radius: var(--r-l); background: var(--ink); color: var(--bg); box-shadow: var(--shadow); animation: rise .6s var(--ease) both; }
+.nextup__when { display: grid; align-content: start; gap: 2px; padding-inline-end: 24px; border-inline-end: 1px solid color-mix(in oklab, var(--bg) 22%, transparent); }
+.nextup__label { font-size: 13px; font-weight: 600; color: var(--accent); letter-spacing: .04em; }
+.nextup__time { font: 600 48px/1 var(--f-data); }
+.nextup__rel { font-size: 14px; opacity: .75; }
+.nextup__body { display: grid; gap: 8px; align-content: start; min-width: 0; }
+.nextup__name { font: 700 30px/1.05 var(--f-display); }
+.nextup__name span { font-family: var(--f-body); font-size: 15px; font-weight: 500; opacity: .75; }
+.nextup__addr { display: flex; gap: 8px; align-items: flex-start; font-size: 20px; font-weight: 600; overflow-wrap: anywhere; }
+.nextup__addr svg { flex: none; color: var(--accent); margin-top: 4px; }
+.nextup__extra { font-size: 14px; opacity: .8; }
+.nextup__extra:empty { display: none; }
+.nextup .agitem__notes { grid-column: auto; background: color-mix(in oklab, var(--bg) 10%, transparent); color: var(--bg); }
+.nextup__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.nextup__actions .btn--ghost { color: var(--bg); border-color: color-mix(in oklab, var(--bg) 35%, transparent); }
+.nextup__actions .btn--ghost:hover { border-color: var(--bg); }
+.btn--nav { background: #33ccff; color: #062433; }
+.btn--nav:hover { transform: translateY(-2px); }
+.agitem__addr { display: flex; gap: 6px; align-items: flex-start; font-weight: 600; font-size: 15px; overflow-wrap: anywhere; min-width: 0; }
+.agitem__addr svg { flex: none; color: var(--accent); margin-top: 2px; }
+.agitem__addr b { font-family: var(--f-data); font-weight: 600; }
+#refreshBtn.is-loading svg { animation: spin .8s linear infinite; }
+.spinner--big { display: inline-block; width: 28px; height: 28px; border-width: 3px; color: var(--accent); }
+@media (max-width: 620px) {
+  .nextup { grid-template-columns: 1fr; gap: 14px; padding: 20px; }
+  .nextup__when { padding: 0 0 14px; border-inline-end: 0; border-bottom: 1px solid color-mix(in oklab, var(--bg) 22%, transparent); display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+  .nextup__label { width: 100%; }
+  .dash__actions .btn { padding-inline: 12px; }
+}
