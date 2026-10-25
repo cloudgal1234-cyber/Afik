@@ -103,7 +103,11 @@ async function groupAction(body) {
     const { member, key } = newMember(body.name, body.avail);
     return mutateGroups((data) => {
       let id;
-      do { id = crypto.randomBytes(5).toString("base64url").replace(/[-_]/g, "k").slice(0, 6); } while (data.groups[id]);
+      // קוד קצר של 1–3 ספרות שקל להגיד בטלפון
+      const free = [];
+      for (let n = 1; n <= 999; n++) if (!data.groups[String(n)]) free.push(String(n));
+      if (!free.length) throw fail("busy");
+      id = free[crypto.randomInt(free.length)];
       data.groups[id] = { id, createdAt: Date.now(), workoutId: str(body.workoutId, 40), creator: member.name, members: [member], booked: null };
       return { ok: true, group: publicGroup(data.groups[id]), memberId: member.id, key };
     });

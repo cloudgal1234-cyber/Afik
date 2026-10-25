@@ -853,3 +853,37 @@ html.has-savebar .toasts { bottom: calc(96px + env(safe-area-inset-bottom, 0px))
 }
 /* רשימות ארוכות: הדירוג של אנימציית הכניסה נעצר אחרי 12 פריטים כדי שהכול יופיע מהר */
 .slot, .gpartial { animation-delay: calc(min(var(--i, 0), 12) * 30ms); }
+
+/* ---------- Group: choose / join by code ---------- */
+.gchoose { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.gchoice { display: grid; justify-items: start; gap: 6px; text-align: start; padding: 22px; border-radius: var(--r-l); border: 1.5px solid var(--line); background: var(--bg); color: var(--ink); transition: border-color .2s, transform .3s var(--spring), box-shadow .3s; animation: slotIn .4s var(--ease) both; }
+.gchoice:nth-child(2) { animation-delay: 60ms; }
+.gchoice svg { color: var(--accent); margin-bottom: 6px; transition: transform .4s var(--spring); }
+.gchoice b { font: 700 28px/1 var(--f-display); }
+.gchoice small { color: var(--muted); font-size: 14px; }
+.gchoice:hover { border-color: var(--ink); transform: translateY(-3px); box-shadow: var(--shadow); }
+.gchoice:hover svg { transform: scale(1.12) rotate(-6deg); }
+.gcode { display: grid; gap: 6px; padding: 22px; border-radius: var(--r-l); background: var(--bg); border: 1px solid var(--line); animation: slotIn .35s var(--ease) both; }
+.gcode label { font: 700 26px/1 var(--f-display); }
+.gcode__hint { color: var(--muted); font-size: 14px; }
+.gcode__row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 8px; }
+.gcode__row input { width: 9ch; height: 64px; text-align: center; font: 600 34px var(--f-data); letter-spacing: .25em; padding: 0 0 0 .25em; border-radius: 16px; border: 2px solid var(--line); background: var(--surface); color: var(--ink); transition: border-color .2s, box-shadow .2s; }
+.gcode__row input::placeholder { color: var(--line); }
+.gcode__row input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 5px var(--accent-soft); }
+.gcode__row .btn { height: 64px; }
+.gback { justify-self: start; }
+.gshare__code { display: grid; justify-items: center; padding: 6px 18px; border-radius: 14px; background: var(--accent); color: var(--accent-ink); animation: pop .5s var(--spring); }
+.gshare__code small { font-size: 11px; font-weight: 600; opacity: .85; }
+.gshare__code b { font: 600 36px/1.05 var(--f-data); letter-spacing: .08em; }
+.gshare__info { flex: 1; }
+.gshare__hint { font-size: 13px; opacity: .8; }
+@media (max-width: 620px) {
+  .gchoose { grid-template-columns: 1fr; }
+  .gcode__row input { flex: 1; width: auto; }
+  .gcode__row .btn { width: 100%; }
+}
+.gcode__row input { min-width: 0; max-width: 100%; }
+@media (max-width: 620px) { .gcode__row input { flex: 1 1 100%; } }
+#groupBox > *, .gcode__row > * { min-width: 0; }
+.gcode__row input { width: 9ch; }
+@media (max-width: 620px) { .gcode__row input { width: 100%; } }

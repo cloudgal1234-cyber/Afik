@@ -254,6 +254,7 @@
     space: saved.space || null,
     goals: saved.goals || [],
     mode: "solo",           // solo | group
+    gView: "choose",        // choose | join | create (לפני שיש קבוצה)
     group: null,            // הקבוצה הטעונה
     gAvail: { 0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] } // השעות שאני מסמן/ת
   };
@@ -907,7 +908,9 @@
     let out;
     if (action === "groupGet") { if (!db[p.id]) fail("not_found"); out = { ok: true, group: pub(db[p.id]) }; }
     if (action === "groupCreate") {
-      const m = mk(), id = Math.random().toString(36).slice(2, 8);
+      const m = mk();
+      const free = []; for (let n = 1; n <= 999; n++) if (!db[String(n)]) free.push(String(n));
+      const id = free[Math.floor(Math.random() * free.length)];
       db[id] = { id, createdAt: Date.now(), workoutId: p.workoutId, creator: m.name, members: [m], booked: null };
       out = { ok: true, group: pub(db[id]), memberId: m.id, key: m.key };
     }
@@ -1024,23 +1027,56 @@
     const g = state.group, me = groupMe();
     const w = workoutById(g ? g.workoutId : state.workoutId);
     $("#errG").textContent = "";
+    if (!g && state.gView === "choose") {
+      $("#groupTitle").textContent = "אימון בקבוצה";
+      box.innerHTML = `
+        <div class="gchoose">
+          <button type="button" class="gchoice" data-gview="join">
+            ${svg('<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l-5-5 5-5M5 12h11"/>', 30)}
+            <b>הצטרפות לקבוצה קיימת</b>
+            <small>חבר פתח קבוצה ונתן לך קוד? מקלידים אותו כאן</small>
+          </button>
+          <button type="button" class="gchoice" data-gview="create">
+            ${svg('<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>', 30)}
+            <b>פתיחת קבוצה חדשה</b>
+            <small>מקבלים קוד קצר ואומרים אותו לחברים</small>
+          </button>
+        </div>`;
+      return;
+    }
+    if (!g && state.gView === "join") {
+      $("#groupTitle").textContent = "הצטרפות לקבוצה";
+      box.innerHTML = `
+        <div class="gcode">
+          <label for="gCodeIn">קוד הקבוצה</label>
+          <p class="gcode__hint">המספר שקיבלת ממי שפתח את הקבוצה</p>
+          <div class="gcode__row">
+            <input id="gCodeIn" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="3" autocomplete="off" placeholder="000" dir="ltr">
+            <button type="button" class="btn btn--primary" id="gFind" data-ripple><span class="btn__label">כניסה לקבוצה</span><span class="spinner" aria-hidden="true"></span></button>
+          </div>
+        </div>
+        <button type="button" class="linkbtn linkbtn--muted gback" data-gview="choose">→ חזרה</button>`;
+      setTimeout(() => $("#gCodeIn")?.focus(), 60);
+      return;
+    }
     if (!g) {
       $("#groupTitle").textContent = "פותחים קבוצה";
       box.innerHTML = `
         <ol class="gsteps">
           <li><b>מסמנים</b> מתי נוח לך בשבוע</li>
-          <li><b>שולחים קישור</b> לחברים, וכל אחד מסמן את השעות שלו</li>
+          <li><b>מקבלים קוד</b> ואומרים אותו לחברים, וכל אחד מסמן את השעות שלו</li>
           <li><b>בוחרים</b> שעה שמתאימה לכולם ול${esc(CONFIG.trainer)}</li>
         </ol>
         <div class="field gname"><label for="gName">השם שלך</label><input id="gName" type="text" maxlength="30" autocomplete="given-name" value="${esc(store.get("profile", {}).name || "")}" placeholder="למשל: נועה"></div>
         <p class="gsub">מתי נוח לך?</p>
         ${availGridHtml(state.gAvail)}
-        <button type="button" class="btn btn--primary gcreate" id="gCreate" data-ripple><span class="btn__label">יצירת קבוצה וקבלת קישור</span><span class="spinner" aria-hidden="true"></span></button>
-        <div id="gMatches">${matchesHtml()}</div>`;
+        <button type="button" class="btn btn--primary gcreate" id="gCreate" data-ripple><span class="btn__label">פתיחת קבוצה וקבלת קוד</span><span class="spinner" aria-hidden="true"></span></button>
+        <div id="gMatches">${matchesHtml()}</div>
+        <button type="button" class="linkbtn linkbtn--muted gback" data-gview="choose">→ חזרה</button>`;
       return;
     }
     $("#groupTitle").textContent = `הקבוצה של ${g.creator}`;
-    const shareText = `בואו נתאמן יחד עם ${CONFIG.trainer}${w ? ` (${w.name})` : ""} 💪\nכל אחד מסמן מתי נוח לו, והאתר מוצא שעה שמתאימה לכולם:\n${groupLink(g.id)}`;
+    const shareText = `בואו נתאמן יחד עם ${CONFIG.trainer}${w ? ` (${w.name})` : ""} 💪\nנכנסים לאתר, בוחרים "אימון בקבוצה" ← "הצטרפות לקבוצה קיימת" ומקלידים את הקוד: ${g.id}\nאו ישר מהקישור: ${groupLink(g.id)}`;
     const booked = g.booked ? `
       <div class="gbooked">
         ${svg('<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9.5"/>', 28)}
@@ -1050,12 +1086,17 @@
     box.innerHTML = `
       ${booked}
       <div class="gshare">
+        <div class="gshare__code">
+          <small>קוד הקבוצה</small>
+          <b dir="ltr" id="gCodeText">${esc(g.id)}</b>
+        </div>
         <div class="gshare__info">
           <p class="gshare__title">${w ? esc(w.name) : "אימון קבוצתי"} · ${g.members.length} ${g.members.length === 1 ? "משתתף" : "משתתפים"}</p>
+          <p class="gshare__hint">אומרים לחברים את הקוד. הם בוחרים "אימון בקבוצה", ואז "הצטרפות לקבוצה קיימת"</p>
           <p class="gshare__link" dir="ltr" id="gLinkText">${esc(groupLink(g.id))}</p>
         </div>
         <div class="gshare__actions">
-          <button type="button" class="btn btn--small btn--ghost" id="gCopy">העתקת קישור</button>
+          <button type="button" class="btn btn--small btn--ghost" id="gCopy">העתקת הקוד</button>
           <a class="btn btn--small btn--wa" href="https://wa.me/?text=${encodeURIComponent(shareText)}" target="_blank" rel="noopener">${svg('<path d="M4 20l1.3-4A8 8 0 1 1 8 18.7L4 20Z"/>', 16)}<span>שליחה לחברים</span></a>
         </div>
       </div>
@@ -1074,7 +1115,7 @@
       ${g.booked ? "" : `<div id="gMatches">${matchesHtml()}</div>`}
       <div class="gfoot">
         ${me ? `<button type="button" class="linkbtn" id="gLeave">יציאה מהקבוצה</button>` : ""}
-        <button type="button" class="linkbtn linkbtn--muted" id="gNew">פתיחת קבוצה חדשה</button>
+        <button type="button" class="linkbtn linkbtn--muted" id="gNew">מעבר לקבוצה אחרת</button>
       </div>`;
   }
 
@@ -1138,6 +1179,9 @@
   $("#groupBox").addEventListener("input", (e) => { if (e.target.id === "gName" && !groupMe()) refreshMatches(); });
 
   $("#groupBox").addEventListener("click", async (e) => {
+    const gv = e.target.closest("[data-gview]");
+    if (gv) { state.gView = gv.dataset.gview; renderGroup(); return; }
+    if (e.target.closest("#gFind")) { findGroupByCode(); return; }
     const preset = e.target.closest("[data-preset]");
     if (preset) {
       const p = preset.dataset.preset;
@@ -1172,7 +1216,7 @@
         state.group = r.group;
         if (id === "gCreate") { try { history.replaceState(null, "", `#g-${r.group.id}`); } catch { /* sandboxed */ } }
         renderGroup(); updateSummary();
-        toast(id === "gCreate" ? "הקבוצה נפתחה! עכשיו שולחים את הקישור לחברים" : `הצטרפת לקבוצה של ${r.group.creator}`, "ok");
+        toast(id === "gCreate" ? `הקבוצה נפתחה! הקוד שלה: ${r.group.id}` : `הצטרפת לקבוצה של ${r.group.creator}`, "ok");
       } catch (err) {
         btn.classList.remove("is-loading"); btn.disabled = false;
         $("#errG").textContent = err.code === "group_full" ? "הקבוצה מלאה (עד 8 משתתפים)" : err.code === "not_found" ? "הקבוצה לא נמצאה. אולי פג התוקף שלה" : "לא הצלחנו לשמור. בדקו את החיבור ונסו שוב";
@@ -1180,10 +1224,10 @@
       return;
     }
     if (id === "gCopy") {
-      const link = groupLink(state.group.id), btn = $("#gCopy");
-      try { await navigator.clipboard.writeText(link); btn.textContent = "הועתק ✓"; toast("הקישור הועתק. אפשר להדביק לחברים", "ok"); }
-      catch { const r = document.createRange(); r.selectNodeContents($("#gLinkText")); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); btn.textContent = "מסומן, אפשר להעתיק"; }
-      setTimeout(() => { if (btn.isConnected) btn.textContent = "העתקת קישור"; }, 2200);
+      const code = state.group.id, btn = $("#gCopy");
+      try { await navigator.clipboard.writeText(code); btn.textContent = "הועתק ✓"; toast(`הקוד ${code} הועתק`, "ok"); }
+      catch { const r = document.createRange(); r.selectNodeContents($("#gCodeText")); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); btn.textContent = "מסומן, אפשר להעתיק"; }
+      setTimeout(() => { if (btn.isConnected) btn.textContent = "העתקת הקוד"; }, 2200);
       return;
     }
     if (id === "gLeave") {
@@ -1198,7 +1242,35 @@
     if (id === "gNew") { resetGroup(); return; }
   });
 
+  $("#groupBox").addEventListener("keydown", (e) => {
+    if (e.target.id === "gCodeIn" && e.key === "Enter") { e.preventDefault(); findGroupByCode(); }
+  });
+  $("#groupBox").addEventListener("input", (e) => {
+    if (e.target.id === "gCodeIn") { e.target.value = e.target.value.replace(/\D/g, "").slice(0, 3); $("#errG").textContent = ""; }
+  });
+
+  async function findGroupByCode() {
+    const input = $("#gCodeIn"), code = String(Number(input.value || 0));
+    if (!/^\d{1,3}$/.test(input.value) || code === "0") { $("#errG").textContent = "מקלידים את הקוד, מספר של 1 עד 3 ספרות"; shake(input); input.focus(); return; }
+    const btn = $("#gFind"); btn.classList.add("is-loading"); btn.disabled = true;
+    try {
+      const r = await gCall("groupGet", { id: code });
+      state.group = r.group;
+      if (workoutById(r.group.workoutId)) { state.workoutId = r.group.workoutId; renderPick(); }
+      const me = groupMe();
+      state.gAvail = me ? JSON.parse(JSON.stringify(me.avail)) : emptyAvail();
+      try { history.replaceState(null, "", `#g-${r.group.id}`); } catch { /* sandboxed */ }
+      renderGroup(); updateSummary();
+      toast(me ? `חזרת לקבוצה של ${r.group.creator}` : `מצאנו את הקבוצה של ${r.group.creator}`, "ok");
+    } catch (err) {
+      btn.classList.remove("is-loading"); btn.disabled = false;
+      $("#errG").textContent = err.code === "not_found" ? "לא מצאנו קבוצה עם הקוד הזה. בדקו את המספר מול מי שפתח אותה" : "אין חיבור כרגע. נסו שוב";
+      shake(input);
+    }
+  }
+
   function resetGroup() {
+    state.gView = "choose";
     state.group = null; state.gAvail = emptyAvail(); state.date = null; state.time = null;
     try { if (location.hash.startsWith("#g-")) history.replaceState(null, "", location.pathname + "#book"); } catch { /* sandboxed */ }
     renderGroup(); updateSummary();
@@ -1242,6 +1314,7 @@
   function setMode(mode) {
     if (state.mode === mode) return;
     state.mode = mode;
+    if (mode === "group" && !state.group) state.gView = "choose";
     $$("#modePick .mode").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.mode === mode)));
     state.date = null; state.time = null;
     state.maxStep = Math.min(state.maxStep, 2);
@@ -1591,7 +1664,7 @@
       online ? loadTaken() : refreshAvailability();
     }
     wasAdmin = isAdmin;
-    const gm = !isAdmin && location.hash.match(/^#g-([A-Za-z0-9]{4,12})$/);
+    const gm = !isAdmin && location.hash.match(/^#g-([A-Za-z0-9]{1,12})$/);
     if (gm && state.group?.id !== gm[1]) openGroupLink(gm[1]);
   }
 
