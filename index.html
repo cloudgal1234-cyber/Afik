@@ -127,6 +127,16 @@
           <!-- STEP 1 -->
           <fieldset class="panel is-active" data-panel="1">
             <legend class="panel__title">איזה אימון בא לך?</legend>
+            <div class="modepick" id="modePick" role="radiogroup" aria-label="לבד או בקבוצה">
+              <button type="button" class="mode" role="radio" data-mode="solo" aria-checked="true">
+                <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><circle cx="12" cy="7" r="3.5"/><path d="M5 20c0-3.9 3.1-7 7-7s7 3.1 7 7"/></svg>
+                <span><b>אימון לבד</b><small>רק את/ה והמאמן. בוחרים יום ושעה מהיומן</small></span>
+              </button>
+              <button type="button" class="mode" role="radio" data-mode="group" aria-checked="false">
+                <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><circle cx="8" cy="8" r="3"/><circle cx="16.5" cy="8.5" r="2.5"/><path d="M2 20c0-3.3 2.7-6 6-6s6 2.7 6 6M14.5 14.2A5 5 0 0 1 22 18.5"/></svg>
+                <span><b>אימון בקבוצה</b><small>2–8 חברים. כל אחד מסמן מתי נוח לו, ורואים מה מתאים לכולם</small></span>
+              </button>
+            </div>
             <div class="wpick" id="workoutPick" role="radiogroup" aria-label="סוג אימון"></div>
             <label class="switch" for="firstTime">
               <input type="checkbox" id="firstTime">
@@ -163,6 +173,13 @@
             </div>
             <p class="field__error" id="err2" role="alert"></p>
           </fieldset>
+
+          <!-- STEP 2 (group) -->
+          <section class="panel" data-panel="g" aria-labelledby="groupTitle">
+            <h3 class="panel__title" id="groupTitle">מתי נוח לכם?</h3>
+            <div id="groupBox"></div>
+            <p class="field__error" id="errG" role="alert"></p>
+          </section>
 
           <!-- STEP 3 -->
           <fieldset class="panel" data-panel="3">

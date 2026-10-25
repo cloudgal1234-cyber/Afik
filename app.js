@@ -14,6 +14,9 @@
     minLeadHours: 3,          // אי אפשר לשריין פחות משלוש שעות מראש
     daysAhead: 56,            // שמונה שבועות קדימה
     cancelHours: 12,
+    // שעות שאפיק בדרך כלל לא פנוי בהן, אבל אפשר לשריין טנטטיבית. הוא מאשר עד יום לפני
+    tentative: { 1: [16, 17, 18, 19, 20, 21], 2: [16, 17, 18, 19, 20, 21] },
+    groupExtra: 100,          // תוספת לכל משתתף נוסף באימון קבוצתי
     allowAllCities: true,     // לקבל הזמנות מכל הארץ ולא רק מהערים ברשימה
     otherCityFee: 50,         // תוספת נסיעה לעיר שלא ברשימה
     // SHA-256 של סיסמת דף הניהול (ברירת מחדל: afik2026). להחלפה ראו README
@@ -105,7 +108,7 @@
     heart: '<path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10Z"/><path d="M8 12h2l1-2 2 4 1-2h2"/>'
   };
   // השדות שאפיק יכול לערוך מדף הניהול. ברירות המחדל נשמרות למקרה שאין הגדרות שמורות
-  const EDITABLE = ["trainer", "phoneDisplay", "area", "hours", "workouts", "cities", "allowAllCities", "otherCityFee", "firstTimeDiscount", "minLeadHours", "daysAhead", "cancelHours"];
+  const EDITABLE = ["trainer", "phoneDisplay", "area", "hours", "workouts", "cities", "tentative", "groupExtra", "allowAllCities", "otherCityFee", "firstTimeDiscount", "minLeadHours", "daysAhead", "cancelHours"];
   const pickEditable = (src) => JSON.parse(JSON.stringify(Object.fromEntries(EDITABLE.map((k) => [k, src[k]]))));
 
   /* ---------- helpers ---------- */
@@ -137,13 +140,14 @@
   const cityFee = (n) => { const c = cityByName(n); return c ? c.fee : (n && CONFIG.allowAllCities ? CONFIG.otherCityFee : 0); };
   const endTime = (h, minutes) => { const t = h * 60 + minutes; return hhmm(Math.floor(t / 60), t % 60); };
 
-  function priceFor(workoutId, firstTime, city) {
+  function priceFor(workoutId, firstTime, city, people = 1) {
     const w = workoutById(workoutId);
     if (!w) return null;
     const base = w.price;
     const discount = firstTime ? Math.round(base * CONFIG.firstTimeDiscount / 10) * 10 : 0;
     const fee = cityFee(city);
-    return { base, discount, fee, total: base - discount + fee };
+    const extra = Math.max(0, people - 1) * (CONFIG.groupExtra || 0);
+    return { base, discount, fee, extra, people, total: base - discount + fee + extra };
   }
 
   /* deterministic "Afik is already booked" so the calendar looks like a real diary */
@@ -195,6 +199,8 @@
     return hash(`${iso}@${h}`) < busyRate;
   }
 
+  const isTentative = (iso, h) => (CONFIG.tentative?.[fromISO(iso).getDay()] || []).includes(h);
+
   function slotsFor(iso) {
     const d = fromISO(iso);
     const now = new Date();
@@ -202,7 +208,7 @@
     return (CONFIG.hours[d.getDay()] || []).map((h) => {
       const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), h);
       const tooSoon = start.getTime() < lead;
-      return { h, free: !tooSoon && !isTaken(iso, h), tooSoon };
+      return { h, free: !tooSoon && !isTaken(iso, h), tooSoon, tentative: isTentative(iso, h) };
     });
   }
 
@@ -219,7 +225,7 @@
     for (let i = 0; i < CONFIG.daysAhead; i++) {
       const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() + i);
       const iso = toISO(d);
-      const s = slotsFor(iso).find((x) => x.free);
+      const s = slotsFor(iso).find((x) => x.free && !x.tentative);
       if (s) return { iso, h: s.h, offset: i };
     }
     return null;
@@ -246,7 +252,10 @@
     time: null,
     view: (() => { const t = new Date(); return new Date(t.getFullYear(), t.getMonth(), 1); })(),
     space: saved.space || null,
-    goals: saved.goals || []
+    goals: saved.goals || [],
+    mode: "solo",           // solo | group
+    group: null,            // הקבוצה הטעונה
+    gAvail: { 0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] } // השעות שאני מסמן/ת
   };
 
   /* ---------- toast ---------- */
@@ -405,6 +414,8 @@
     if (matchMedia("(max-width: 860px)").matches) $("#slots").scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "nearest" });
   }
 
+  const tentNoteHtml = () => `<b>שריון טנטטיבי.</b> ${esc(CONFIG.trainer)} בדרך כלל לא פנוי בשעה הזאת, אבל ינסה. הוא יעדכן עד יום לפני האימון אם זה מסתדר, ואם לא, קובעים יחד שעה אחרת.`;
+
   function renderSlots() {
     const box = $("#slots");
     if (!state.date) return;
@@ -424,9 +435,11 @@
         <div class="slots__group">
           <p class="slots__label">${label}</p>
           <div class="slots__row" role="radiogroup" aria-label="${label}">
-            ${g.map((s) => `<button type="button" class="slot" role="radio" style="--i:${i++}" data-h="${s.h}" aria-checked="${state.time === s.h}" ${s.free ? "" : "disabled"} aria-label="${hhmm(s.h)} עד ${endTime(s.h, mins)}${s.free ? "" : s.tooSoon ? ", מוקדם מדי לשריון" : ", תפוס"}">${hhmm(s.h)}</button>`).join("")}
+            ${g.map((s) => `<button type="button" class="slot${s.tentative ? " slot--tent" : ""}" role="radio" style="--i:${i++}" data-h="${s.h}" aria-checked="${state.time === s.h}" ${s.free ? "" : "disabled"} aria-label="${hhmm(s.h)} עד ${endTime(s.h, mins)}${s.free ? (s.tentative ? ", טנטטיבי" : "") : s.tooSoon ? ", מוקדם מדי לשריון" : ", תפוס"}">${hhmm(s.h)}</button>`).join("")}
           </div>
         </div>`).join("")}
+      ${list.some((x) => x.tentative) ? `<p class="slots__tentlegend"><i aria-hidden="true"></i>שעות מקווקוות הן טנטטיביות: ${esc(CONFIG.trainer)} בדרך כלל לא פנוי בהן</p>` : ""}
+      <div class="tentnote" id="tentNote" ${isTentative(state.date, state.time) ? "" : "hidden"}>${tentNoteHtml()}</div>
       <p class="slots__foot">${esc(slotsFootnote(state.date))}</p>`;
   }
 
@@ -434,6 +447,7 @@
     const b = e.target.closest(".slot"); if (!b || b.disabled) return;
     state.time = Number(b.dataset.h);
     $$(".slot", $("#slots")).forEach((s) => s.setAttribute("aria-checked", s === b));
+    const tn = $("#tentNote"); if (tn) tn.hidden = !b.classList.contains("slot--tent");
     $("#err2").textContent = "";
     updateSummary("time");
   });
@@ -615,11 +629,11 @@
   function updateSummary(changed) {
     const w = workoutById(state.workoutId);
     const d = readDetails();
-    setDD("sWorkout", w ? `${w.name} · ${w.minutes} דק׳` : "", changed === "workout");
+    setDD("sWorkout", w ? `${w.name} · ${w.minutes} דק׳${state.mode === "group" ? ` · ${state.group ? `קבוצה של ${groupPeople()}` : "בקבוצה"}` : ""}` : "", changed === "workout");
     setDD("sDate", state.date ? friendlyDay(state.date) : "", changed === "date");
-    setDD("sTime", state.time != null ? `${hhmm(state.time)}–${endTime(state.time, w ? w.minutes : 60)}` : "", changed === "time" || changed === "workout");
+    setDD("sTime", state.time != null ? `${hhmm(state.time)}–${endTime(state.time, w ? w.minutes : 60)}${state.date && isTentative(state.date, state.time) ? " · טנטטיבי" : ""}` : "", changed === "time" || changed === "workout");
     setDD("sAddr", d.city && d.street ? `${d.street}, ${d.city}` : d.city || "", changed === "addr");
-    const p = priceFor(state.workoutId, state.firstTime, d.city);
+    const p = priceFor(state.workoutId, state.firstTime, d.city, groupPeople());
     animateNumber($("#sPrice"), p ? p.total : 0);
     $("#navPrice").textContent = p ? ils(p.total) : "";
     const gear = w ? w.gear : ["מזרן", "גומיות התנגדות", "קטלבל 8–16 ק״ג"];
@@ -633,7 +647,9 @@
   function renderTicket() {
     const w = workoutById(state.workoutId);
     const d = readDetails();
-    const p = priceFor(state.workoutId, state.firstTime, d.city);
+    const p = priceFor(state.workoutId, state.firstTime, d.city, groupPeople());
+    const tent = isTentative(state.date, state.time);
+    const names = groupNames();
     const addr = [d.street, d.floor, d.city].filter(Boolean).join(", ");
     const phone = d.phone.replace(/^(\d{3})(\d{3})(\d{4})$/, "$1-$2-$3");
     $("#ticket").innerHTML = `
@@ -647,12 +663,15 @@
         <div class="trow"><dt>מתאמן/ת</dt><dd>${esc(d.name)} · <span dir="ltr">${esc(phone)}</span></dd><button type="button" data-goto="3">שינוי</button></div>
         <div class="trow"><dt>כתובת</dt><dd>${esc(addr)}${d.code ? ` · קוד <span dir="ltr">${esc(d.code)}</span>` : ""}${d.space ? ` · ב${esc(d.space)}` : ""}</dd><button type="button" data-goto="3">שינוי</button></div>
         <div class="trow"><dt>מועד</dt><dd>${esc(fmtLong.format(fromISO(state.date)))}, ${hhmm(state.time)}</dd><button type="button" data-goto="2">שינוי</button></div>
+        ${tent ? `<div class="trow trow--tent"><dt>סטטוס</dt><dd>טנטטיבי. ${esc(CONFIG.trainer)} יאשר עד יום לפני</dd><span></span></div>` : ""}
+        ${names.length > 1 ? `<div class="trow"><dt>משתתפים</dt><dd>${names.map(esc).join(", ")}</dd><button type="button" data-goto="2">שינוי</button></div>` : ""}
         ${d.goals.length ? `<div class="trow"><dt>מטרות</dt><dd>${d.goals.map(esc).join(", ")}</dd><button type="button" data-goto="3">שינוי</button></div>` : ""}
         ${d.notes ? `<div class="trow"><dt>הערות</dt><dd>${esc(d.notes)}</dd><button type="button" data-goto="3">שינוי</button></div>` : ""}
         ${p.discount ? `<div class="trow"><dt>הנחת היכרות</dt><dd>−${ils(p.discount)}</dd><span></span></div>` : ""}
         ${p.fee ? `<div class="trow"><dt>תוספת נסיעה</dt><dd>${ils(p.fee)}</dd><span></span></div>` : ""}
+        ${p.extra ? `<div class="trow"><dt>${p.people === 2 ? "משתתף נוסף" : `${p.people - 1} משתתפים נוספים`}</dt><dd>${ils(p.extra)}${p.people > 1 ? ` · ${ils(p.total / p.people)} לאחד` : ""}</dd><span></span></div>` : ""}
       </dl>
-      <div class="ticket__total"><span>לתשלום אחרי האימון</span><span>${p.discount || p.fee ? `<s>${ils(p.base)}</s>` : ""}<b>${ils(p.total)}</b></span></div>`;
+      <div class="ticket__total"><span>לתשלום אחרי האימון</span><span>${p.discount || p.fee || p.extra ? `<s>${ils(p.base)}</s>` : ""}<b>${ils(p.total)}</b></span></div>`;
   }
 
   /* ---------- wizard ---------- */
@@ -662,6 +681,14 @@
   function validateStep(n) {
     if (n === 1) {
       if (!state.workoutId) { $("#err1").textContent = "בחרו סוג אימון כדי להמשיך"; shake($("#workoutPick")); return false; }
+    }
+    if (n === 2 && state.mode === "group") {
+      if (!state.group) { $("#errG").textContent = "קודם פותחים קבוצה: כותבים שם, מסמנים שעות ולוחצים על יצירת קבוצה"; shake($("#groupBox")); return false; }
+      if (!groupMe()) { $("#errG").textContent = "קודם מצטרפים לקבוצה"; shake($("#groupBox")); return false; }
+      if (state.group.booked) { $("#errG").textContent = "האימון של הקבוצה כבר נקבע"; return false; }
+      if (!state.date || state.time == null) { $("#errG").textContent = "בחרו שעה שמתאימה לכולם"; shake($("#gMatches") || $("#groupBox")); return false; }
+      if (!slotsFor(state.date).find((s) => s.h === state.time)?.free) { $("#errG").textContent = "השעה הזאת כבר נתפסה, בחרו שעה אחרת"; state.date = null; state.time = null; renderGroup(); return false; }
+      return true;
     }
     if (n === 2) {
       if (!state.date) { $("#err2").textContent = "בחרו יום בלוח"; shake($("#cal")); return false; }
@@ -689,8 +716,9 @@
     const back = n < state.step;
     state.step = n;
     state.maxStep = Math.max(state.maxStep, n);
+    const key = n === 2 && state.mode === "group" ? "g" : String(n);
     panels.forEach((p) => {
-      const on = Number(p.dataset.panel) === n;
+      const on = p.dataset.panel === key;
       p.classList.toggle("is-active", on);
       p.classList.toggle("is-back", on && back);
     });
@@ -704,10 +732,13 @@
     });
     $("#progressBar").style.width = `${((Math.min(n, 4) - 1) / 3) * 100}%`;
     $("#backBtn").classList.toggle("is-hidden", n === 1);
-    $(".btn__label", $("#nextBtn")).textContent = n === 4 ? "לשריין את האימון" : "המשך";
+    $(".btn__label", $("#nextBtn")).textContent = n === 4 ? "לשריין את האימון" : n === 1 && state.mode === "group" ? "המשך לתיאום הקבוצה" : "המשך";
     $("#wizard").classList.toggle("is-done", n === 5);
-    if (n === 2) { if (state.date) { const d = fromISO(state.date); state.view = new Date(d.getFullYear(), d.getMonth(), 1); } renderCalendar(); renderSlots(); }
+    if (n === 2 && state.mode === "group") renderGroup();
+    else if (n === 2) { if (state.date) { const d = fromISO(state.date); state.view = new Date(d.getFullYear(), d.getMonth(), 1); } renderCalendar(); renderSlots(); }
     if (n === 4) renderTicket();
+    // לפני הזמנה קבוצתית מושכים את רשימת המשתתפים העדכנית, כדי שהמחיר והשמות יהיו נכונים
+    if ((n === 3 || n === 4) && state.mode === "group" && state.group) refreshGroup().then(() => { updateSummary(); if (state.step === 4) renderTicket(); });
     const legend = $(".panel.is-active .panel__title");
     if (legend && document.activeElement && document.activeElement.closest("#wizard")) {
       const top = $("#wizard").getBoundingClientRect().top;
@@ -739,14 +770,19 @@
     $("#err4").textContent = "";
     const w = workoutById(state.workoutId);
     const d = readDetails();
-    const p = priceFor(state.workoutId, state.firstTime, d.city);
+    const p = priceFor(state.workoutId, state.firstTime, d.city, groupPeople());
     const b = {
       id: "AF-" + Math.random().toString(36).slice(2, 6).toUpperCase(),
       workoutId: w.id, workout: w.name, date: state.date, time: state.time, minutes: w.minutes,
-      price: p.total, firstTime: state.firstTime, details: d, createdAt: Date.now()
+      price: p.total, firstTime: state.firstTime, details: d, createdAt: Date.now(),
+      tentative: isTentative(state.date, state.time),
+      group: state.mode === "group" && state.group ? { id: state.group.id, members: groupNames() } : null
     };
+    if (b.tentative) b.status = "tentative";
     const reset = () => { btn.classList.remove("is-loading"); btn.disabled = false; };
     const finish = () => {
+      if (b.group && !online) gCall("groupBooked", { id: b.group.id, booked: { date: b.date, time: b.time, bookingId: b.id, by: b.details.name, tentative: b.tentative, at: Date.now() } });
+      if (b.group) setTimeout(refreshGroup, 600);
       bookings.push(b);
       store.set("bookings", bookings);
       saveProfile();
@@ -787,6 +823,8 @@
       d.goals.length ? `מטרות: ${d.goals.join(", ")}` : "",
       d.notes ? `הערות: ${d.notes}` : "",
       b.firstTime ? "זה האימון הראשון שלי" : "",
+      b.tentative ? "זה שריון טנטטיבי (שני/שלישי בערב). תעדכן אותי אם מסתדר?" : "",
+      b.group && b.group.members && b.group.members.length > 1 ? `אימון קבוצתי: ${b.group.members.join(", ")}` : "",
       `מחיר: ${ils(b.price)}`,
       `שם: ${d.name}`,
       d.phone ? `טלפון: ${d.phone.replace(/^(\d{3})(\d{3})(\d{4})$/, "$1-$2-$3")}` : ""
@@ -813,8 +851,10 @@
     const w = workoutById(b.workoutId);
     $("#doneText").textContent = `${w.name} ${friendlyDay(b.date) === fmtLong.format(fromISO(b.date)) ? "ב" + friendlyDay(b.date) : friendlyDay(b.date)} בשעה ${hhmm(b.time)}, ב${b.details.street}, ${b.details.city}. ${CONFIG.trainer} מביא את הציוד, את/ה מביא/ה מים ומגבת.`;
     $("#doneRef").textContent = b.id;
-    $(".done__title").textContent = online ? "האימון נקבע!" : "השריון נשמר!";
-    $(".done__step").innerHTML = online
+    $(".done__title").textContent = b.tentative ? "השריון הטנטטיבי נשמר" : online ? "האימון נקבע!" : "השריון נשמר!";
+    $(".done__step").innerHTML = b.tentative
+      ? `<b>זה שריון טנטטיבי.</b> ${esc(CONFIG.trainer)} יעדכן עד יום לפני האימון אם השעה מסתדרת לו. אם לא, תקבעו יחד שעה אחרת.`
+      : online
       ? `<b>${esc(CONFIG.trainer)} כבר רואה את ההזמנה ביומן שלו</b> ויאשר אותה בהודעה. רוצים להוסיף משהו? אפשר לכתוב לו גם בוואטסאפ.`
       : `<b>עוד צעד אחד:</b> שולחים ל${esc(CONFIG.trainer)} את הפרטים בוואטסאפ, והוא מאשר את המועד בהודעה חוזרת.`;
     $("#waLink").classList.toggle("btn--primary", !online);
@@ -829,10 +869,392 @@
 
   $("#againBtn").addEventListener("click", () => {
     state.date = null; state.time = null; state.maxStep = 1;
+    if (state.mode === "group") { setMode("solo"); state.group = null; state.gAvail = emptyAvail(); try { history.replaceState(null, "", location.pathname + "#book"); } catch { /* sandboxed */ } }
     $("#fAgree").checked = false; $("#err4").textContent = "";
     $("#slots").innerHTML = `<div class="slots__empty">${svg('<circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/>', 44)}<p>בוחרים יום בלוח ורואים את השעות הפנויות</p></div>`;
     goTo(1, true); updateSummary();
   });
+
+  /* ---------- group workouts: friends mark when they're free, the site finds a slot that fits everyone and Afik ---------- */
+  const emptyAvail = () => ({ 0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] });
+  const gKeys = { all: () => store.get("gkeys", {}), get: (id) => store.get("gkeys", {})[id] || null, set(id, v) { const k = store.get("gkeys", {}); if (v) k[id] = v; else delete k[id]; store.set("gkeys", k); } };
+  let gSaveTimer = null, gSaving = false;
+
+  function groupMe() {
+    const k = state.group && gKeys.get(state.group.id);
+    return k ? state.group.members.find((m) => m.id === k.memberId) || null : null;
+  }
+  function groupPeople() { return state.mode === "group" && state.group ? Math.max(1, state.group.members.length) : 1; }
+  function groupNames() { return state.mode === "group" && state.group ? state.group.members.map((m) => m.name) : []; }
+  const availCount = (a) => Object.values(a || {}).reduce((s, l) => s + l.length, 0);
+  const groupLink = (id) => `${location.origin}${location.pathname}#g-${id}`;
+
+  // שרת כשיש, אחרת "שרת" מקומי בדפדפן (לתצוגה מקדימה בלבד, בלי שיתוף בין מכשירים)
+  async function gCall(action, p = {}) {
+    if (online) {
+      if (action === "groupGet") {
+        const res = await fetch(`${API}?action=group&id=${encodeURIComponent(p.id)}`);
+        const data = await res.json();
+        if (!data.ok) { const err = new Error(data.error); err.code = data.error; throw err; }
+        return data;
+      }
+      return api({ action, ...p });
+    }
+    const db = store.get("groupsdb", {});
+    const fail = (code) => { const err = new Error(code); err.code = code; throw err; };
+    const pub = (g) => JSON.parse(JSON.stringify({ ...g, members: g.members.map(({ key, ...m }) => m) }));
+    const mk = () => ({ id: Math.random().toString(36).slice(2, 10), key: Math.random().toString(36).slice(2), name: String(p.name || "").trim().slice(0, 30), avail: p.avail, updatedAt: Date.now() });
+    let out;
+    if (action === "groupGet") { if (!db[p.id]) fail("not_found"); out = { ok: true, group: pub(db[p.id]) }; }
+    if (action === "groupCreate") {
+      const m = mk(), id = Math.random().toString(36).slice(2, 8);
+      db[id] = { id, createdAt: Date.now(), workoutId: p.workoutId, creator: m.name, members: [m], booked: null };
+      out = { ok: true, group: pub(db[id]), memberId: m.id, key: m.key };
+    }
+    if (action === "groupJoin") {
+      const g = db[p.id]; if (!g) fail("not_found"); if (g.members.length >= 8) fail("group_full");
+      const m = mk(); g.members.push(m); out = { ok: true, group: pub(g), memberId: m.id, key: m.key };
+    }
+    if (action === "groupUpdate" || action === "groupLeave") {
+      const g = db[p.id]; if (!g) fail("not_found");
+      const m = g.members.find((x) => x.id === p.memberId && x.key === p.key); if (!m) fail("forbidden");
+      if (action === "groupLeave") g.members = g.members.filter((x) => x !== m);
+      else { m.avail = p.avail; if (p.name) m.name = p.name; m.updatedAt = Date.now(); }
+      if (!g.members.length) delete db[p.id];
+      out = { ok: true, group: db[p.id] ? pub(g) : null };
+    }
+    if (action === "groupBooked") { const g = db[p.id]; if (g) g.booked = p.booked; out = { ok: true }; }
+    store.set("groupsdb", db);
+    return out;
+  }
+
+  function matchMembers() {
+    const me = groupMe();
+    const list = (state.group?.members || []).map((m) => (me && m.id === me.id ? { ...m, avail: state.gAvail } : m));
+    if (!me && availCount(state.gAvail)) list.push({ id: "_me", name: ($("#gName")?.value || "את/ה").trim() || "את/ה", avail: state.gAvail });
+    if (!state.group) return [{ id: "_me", name: "את/ה", avail: state.gAvail }];
+    return list;
+  }
+
+  function computeMatches() {
+    const members = matchMembers();
+    const full = [], partial = [];
+    if (!members.length) return { full, partial, members };
+    const days = Math.min(CONFIG.daysAhead, 21);
+    const t0 = today0();
+    for (let i = 0; i < days; i++) {
+      const date = new Date(t0.getFullYear(), t0.getMonth(), t0.getDate() + i);
+      const iso = toISO(date), w = date.getDay();
+      slotsFor(iso).forEach((s) => {
+        if (!s.free) return;
+        const missing = members.filter((m) => !(m.avail?.[w] || []).includes(s.h));
+        if (!missing.length) full.push({ iso, h: s.h, tent: s.tentative });
+        else if (missing.length === 1 && members.length >= 2) partial.push({ iso, h: s.h, tent: s.tentative, missing: missing.map((m) => m.name) });
+      });
+    }
+    return { full, partial, members };
+  }
+
+  function availGridHtml(avail) {
+    const days = [0, 1, 2, 3, 4, 5, 6].filter((d) => (CONFIG.hours[d] || []).length);
+    if (!days.length) return `<p class="slots__closed">כרגע אין שעות פעילות ביומן.</p>`;
+    return `
+      <div class="agrid__presets">
+        <span>סימון מהיר:</span>
+        <button type="button" data-preset="morning">כל הבקרים</button>
+        <button type="button" data-preset="evening">כל הערבים</button>
+        <button type="button" data-preset="all">הכול</button>
+        <button type="button" data-preset="none">ניקוי</button>
+      </div>
+      <div class="agrid" id="agrid">
+        ${days.map((d) => `
+          <div class="agrid__row">
+            <span class="agrid__day">${DAY_LONG[d]}</span>
+            <div class="agrid__chips">
+              ${(CONFIG.hours[d] || []).map((h) => {
+                const tent = (CONFIG.tentative?.[d] || []).includes(h);
+                return `<button type="button" class="achip${tent ? " achip--tent" : ""}" data-day="${d}" data-h="${h}" aria-pressed="${(avail[d] || []).includes(h)}" aria-label="${DAY_LONG[d]} ${hhmm(h)}${tent ? ", טנטטיבי" : ""}">${pad(h)}</button>`;
+              }).join("")}
+            </div>
+          </div>`).join("")}
+      </div>
+      <p class="agrid__hint">לוחצים על כל שעה שנוחה לך בשבוע רגיל.${(CONFIG.tentative && Object.values(CONFIG.tentative).some((l) => l.length)) ? " שעות מקווקוות הן טנטטיביות." : ""} <span id="gSaveState" aria-live="polite"></span></p>`;
+  }
+
+  function matchesHtml() {
+    const { full, partial, members } = computeMatches();
+    const realCount = state.group ? state.group.members.length : 0;
+    const pick = state.date && state.time != null ? `${state.date}@${state.time}` : "";
+    const byDay = (list) => {
+      const map = new Map();
+      list.forEach((m) => { if (!map.has(m.iso)) map.set(m.iso, []); map.get(m.iso).push(m); });
+      return [...map].slice(0, 10);
+    };
+    if (!availCount(state.gAvail) && !(state.group && state.group.members.some((m) => availCount(m.avail)))) {
+      return `<div class="gmatch gmatch--empty"><p>מסמנים למעלה מתי נוח לך, ופה יופיעו השעות שבהן ${esc(CONFIG.trainer)} פנוי.</p></div>`;
+    }
+    let i = 0;
+    const chips = (list, selectable) => byDay(list).map(([iso, ms]) => `
+      <div class="gmatch__day">
+        <p>${esc(friendlyDay(iso))}${friendlyDay(iso) !== fmtLong.format(fromISO(iso)) ? ` <small>${esc(fmtLong.format(fromISO(iso)))}</small>` : ""}</p>
+        <div class="gmatch__chips">
+          ${ms.map((m) => selectable
+            ? `<button type="button" class="slot gslot${m.tent ? " slot--tent" : ""}" role="radio" style="--i:${i++}" data-iso="${m.iso}" data-h="${m.h}" aria-checked="${pick === `${m.iso}@${m.h}`}" aria-label="${esc(friendlyDay(iso))} ${hhmm(m.h)}${m.tent ? ", טנטטיבי" : ""}">${hhmm(m.h)}</button>`
+            : `<span class="gpartial" style="--i:${i++}" title="חסר: ${esc(m.missing.join(", "))}">${hhmm(m.h)} <small>בלי ${esc(m.missing.join(", "))}</small></span>`).join("")}
+        </div>
+      </div>`).join("");
+    const who = realCount <= 1 ? "לך" : `לכל ${members.length} המשתתפים`;
+    return `
+      <div class="gmatch">
+        <p class="gmatch__title">${full.length ? `${full.length} שעות מתאימות ${who} ול${esc(CONFIG.trainer)}` : `אין עדיין שעה שמתאימה ${who} ול${esc(CONFIG.trainer)}`}</p>
+        ${realCount <= 1 && state.group ? `<p class="gmatch__note">כרגע רק את/ה בקבוצה. כשהחברים יסמנו את השעות שלהם, הרשימה תתעדכן לבד.</p>` : ""}
+        ${full.length ? chips(full, true) : partial.length ? `<p class="gmatch__note">שעות שמתאימות לכולם חוץ מאחד:</p>${chips(partial, false)}` : `<p class="gmatch__note">נסו לסמן עוד שעות, או לבקש מהחברים להוסיף.</p>`}
+        <div class="tentnote" id="gTentNote" ${state.date && isTentative(state.date, state.time) ? "" : "hidden"}>${tentNoteHtml()}</div>
+      </div>`;
+  }
+
+  function membersHtml() {
+    const me = groupMe();
+    return `<ul class="gmembers">${state.group.members.map((m, i) => `
+      <li style="--i:${i}"><span class="gav" aria-hidden="true">${esc(m.name.trim().charAt(0))}</span><span><b>${esc(m.name)}${me && m.id === me.id ? " (את/ה)" : ""}</b><small>${availCount(me && m.id === me.id ? state.gAvail : m.avail) ? `סימן/ה ${availCount(me && m.id === me.id ? state.gAvail : m.avail)} שעות` : "עוד לא סימן/ה"}</small></span></li>`).join("")}</ul>`;
+  }
+
+  function renderGroup() {
+    const box = $("#groupBox");
+    const g = state.group, me = groupMe();
+    const w = workoutById(g ? g.workoutId : state.workoutId);
+    $("#errG").textContent = "";
+    if (!g) {
+      $("#groupTitle").textContent = "פותחים קבוצה";
+      box.innerHTML = `
+        <ol class="gsteps">
+          <li><b>מסמנים</b> מתי נוח לך בשבוע</li>
+          <li><b>שולחים קישור</b> לחברים, וכל אחד מסמן את השעות שלו</li>
+          <li><b>בוחרים</b> שעה שמתאימה לכולם ול${esc(CONFIG.trainer)}</li>
+        </ol>
+        <div class="field gname"><label for="gName">השם שלך</label><input id="gName" type="text" maxlength="30" autocomplete="given-name" value="${esc(store.get("profile", {}).name || "")}" placeholder="למשל: נועה"></div>
+        <p class="gsub">מתי נוח לך?</p>
+        ${availGridHtml(state.gAvail)}
+        <button type="button" class="btn btn--primary gcreate" id="gCreate" data-ripple><span class="btn__label">יצירת קבוצה וקבלת קישור</span><span class="spinner" aria-hidden="true"></span></button>
+        <div id="gMatches">${matchesHtml()}</div>`;
+      return;
+    }
+    $("#groupTitle").textContent = `הקבוצה של ${g.creator}`;
+    const shareText = `בואו נתאמן יחד עם ${CONFIG.trainer}${w ? ` (${w.name})` : ""} 💪\nכל אחד מסמן מתי נוח לו, והאתר מוצא שעה שמתאימה לכולם:\n${groupLink(g.id)}`;
+    const booked = g.booked ? `
+      <div class="gbooked">
+        ${svg('<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9.5"/>', 28)}
+        <div><b>${g.booked.tentative ? "שוריין טנטטיבית" : "האימון של הקבוצה נקבע"}: ${esc(friendlyDay(g.booked.date))} ב־${hhmm(g.booked.time)}</b>
+        <small>${friendlyDay(g.booked.date) !== fmtLong.format(fromISO(g.booked.date)) ? `${esc(fmtLong.format(fromISO(g.booked.date)))} · ` : ""}נקבע על ידי ${esc(g.booked.by || "")}${g.booked.tentative ? ` · ${esc(CONFIG.trainer)} יאשר עד יום לפני` : ""}</small></div>
+      </div>` : "";
+    box.innerHTML = `
+      ${booked}
+      <div class="gshare">
+        <div class="gshare__info">
+          <p class="gshare__title">${w ? esc(w.name) : "אימון קבוצתי"} · ${g.members.length} ${g.members.length === 1 ? "משתתף" : "משתתפים"}</p>
+          <p class="gshare__link" dir="ltr" id="gLinkText">${esc(groupLink(g.id))}</p>
+        </div>
+        <div class="gshare__actions">
+          <button type="button" class="btn btn--small btn--ghost" id="gCopy">העתקת קישור</button>
+          <a class="btn btn--small btn--wa" href="https://wa.me/?text=${encodeURIComponent(shareText)}" target="_blank" rel="noopener">${svg('<path d="M4 20l1.3-4A8 8 0 1 1 8 18.7L4 20Z"/>', 16)}<span>שליחה לחברים</span></a>
+        </div>
+      </div>
+      ${membersHtml()}
+      ${me ? `
+        <details class="gmine" ${availCount(state.gAvail) ? "" : "open"}>
+          <summary>השעות שלך <small>${availCount(state.gAvail)} שעות מסומנות</small></summary>
+          ${availGridHtml(state.gAvail)}
+        </details>` : `
+        <div class="gjoin">
+          <p class="gsub">מצטרפים לקבוצה</p>
+          <div class="field gname"><label for="gName">השם שלך</label><input id="gName" type="text" maxlength="30" autocomplete="given-name" value="${esc(store.get("profile", {}).name || "")}" placeholder="למשל: יוסי"></div>
+          ${availGridHtml(state.gAvail)}
+          <button type="button" class="btn btn--primary gcreate" id="gJoin" data-ripple><span class="btn__label">הצטרפות לקבוצה</span><span class="spinner" aria-hidden="true"></span></button>
+        </div>`}
+      ${g.booked ? "" : `<div id="gMatches">${matchesHtml()}</div>`}
+      <div class="gfoot">
+        ${me ? `<button type="button" class="linkbtn" id="gLeave">יציאה מהקבוצה</button>` : ""}
+        <button type="button" class="linkbtn linkbtn--muted" id="gNew">פתיחת קבוצה חדשה</button>
+      </div>`;
+  }
+
+  function refreshMatches() {
+    const el = $("#gMatches"); if (el) el.innerHTML = matchesHtml();
+    const sum = $(".gmine summary small"); if (sum) sum.textContent = `${availCount(state.gAvail)} שעות מסומנות`;
+    if (state.group && $(".gmembers")) $(".gmembers").outerHTML = membersHtml();
+  }
+
+  function setAvailChip(chip, on) {
+    const d = Number(chip.dataset.day), h = Number(chip.dataset.h);
+    const set = new Set(state.gAvail[d] || []);
+    on ? set.add(h) : set.delete(h);
+    state.gAvail[d] = [...set].sort((a, b) => a - b);
+    chip.setAttribute("aria-pressed", String(on));
+  }
+
+  function availChanged() {
+    // בחירה שכבר לא מתאימה לכולם מתבטלת
+    if (state.date && state.time != null && !computeMatches().full.some((m) => m.iso === state.date && m.h === state.time)) { state.date = null; state.time = null; updateSummary("time"); }
+    refreshMatches();
+    if (groupMe()) {
+      clearTimeout(gSaveTimer);
+      const st = $("#gSaveState"); if (st) st.textContent = "שומר…";
+      gSaveTimer = setTimeout(saveMyAvail, 700);
+    }
+  }
+
+  async function saveMyAvail() {
+    const k = gKeys.get(state.group.id); if (!k) return;
+    gSaving = true;
+    try {
+      const r = await gCall("groupUpdate", { id: state.group.id, memberId: k.memberId, key: k.key, avail: state.gAvail });
+      if (r.group) state.group = r.group;
+      const st = $("#gSaveState"); if (st) st.textContent = "נשמר ✓";
+    } catch {
+      const st = $("#gSaveState"); if (st) st.textContent = "לא נשמר, בדקו את החיבור";
+    } finally { gSaving = false; }
+  }
+
+  // מצב ציור: גרירה עם עכבר מסמנת כמה שעות ברצף; במגע, לחיצה על כל שעה
+  let paint = null;
+  $("#groupBox").addEventListener("pointerdown", (e) => {
+    const chip = e.target.closest(".achip"); if (!chip) return;
+    const on = chip.getAttribute("aria-pressed") !== "true";
+    setAvailChip(chip, on);
+    if (e.pointerType === "mouse") { paint = { on }; e.preventDefault(); }
+    availChanged();
+  });
+  document.addEventListener("pointerover", (e) => {
+    if (!paint) return;
+    const chip = e.target.closest && e.target.closest("#groupBox .achip");
+    if (chip && (chip.getAttribute("aria-pressed") === "true") !== paint.on) { setAvailChip(chip, paint.on); availChanged(); }
+  });
+  document.addEventListener("pointerup", () => { paint = null; });
+  $("#groupBox").addEventListener("keydown", (e) => {
+    const chip = e.target.closest(".achip");
+    if (chip && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); setAvailChip(chip, chip.getAttribute("aria-pressed") !== "true"); availChanged(); }
+  });
+
+  $("#groupBox").addEventListener("input", (e) => { if (e.target.id === "gName" && !groupMe()) refreshMatches(); });
+
+  $("#groupBox").addEventListener("click", async (e) => {
+    const preset = e.target.closest("[data-preset]");
+    if (preset) {
+      const p = preset.dataset.preset;
+      for (let d = 0; d < 7; d++) {
+        const hs = CONFIG.hours[d] || [];
+        state.gAvail[d] = p === "none" ? [] : p === "all" ? [...hs] : hs.filter((h) => (p === "morning" ? h < 12 : h >= 16));
+      }
+      $$("#groupBox .achip").forEach((c) => c.setAttribute("aria-pressed", String((state.gAvail[c.dataset.day] || []).includes(Number(c.dataset.h)))));
+      availChanged();
+      return;
+    }
+    const gs = e.target.closest(".gslot");
+    if (gs) {
+      state.date = gs.dataset.iso; state.time = Number(gs.dataset.h);
+      $$("#groupBox .gslot").forEach((x) => x.setAttribute("aria-checked", String(x === gs)));
+      const tn = $("#gTentNote"); if (tn) tn.hidden = !gs.classList.contains("slot--tent");
+      $("#errG").textContent = "";
+      updateSummary("time");
+      return;
+    }
+    const id = e.target.closest("button, a")?.id;
+    if (id === "gCreate" || id === "gJoin") {
+      const name = $("#gName").value.trim();
+      if (name.length < 2) { $("#errG").textContent = "כתבו את השם שלכם, כדי שהחברים ידעו מי סימן"; shake($("#gName").closest(".field")); $("#gName").focus(); return; }
+      if (!availCount(state.gAvail)) { $("#errG").textContent = "סמנו לפחות שעה אחת שנוחה לכם"; shake($("#agrid")); return; }
+      const btn = $("#" + id); btn.classList.add("is-loading"); btn.disabled = true;
+      try {
+        const r = id === "gCreate"
+          ? await gCall("groupCreate", { name, workoutId: state.workoutId, avail: state.gAvail })
+          : await gCall("groupJoin", { id: state.group.id, name, avail: state.gAvail });
+        gKeys.set(r.group.id, { memberId: r.memberId, key: r.key });
+        state.group = r.group;
+        if (id === "gCreate") { try { history.replaceState(null, "", `#g-${r.group.id}`); } catch { /* sandboxed */ } }
+        renderGroup(); updateSummary();
+        toast(id === "gCreate" ? "הקבוצה נפתחה! עכשיו שולחים את הקישור לחברים" : `הצטרפת לקבוצה של ${r.group.creator}`, "ok");
+      } catch (err) {
+        btn.classList.remove("is-loading"); btn.disabled = false;
+        $("#errG").textContent = err.code === "group_full" ? "הקבוצה מלאה (עד 8 משתתפים)" : err.code === "not_found" ? "הקבוצה לא נמצאה. אולי פג התוקף שלה" : "לא הצלחנו לשמור. בדקו את החיבור ונסו שוב";
+      }
+      return;
+    }
+    if (id === "gCopy") {
+      const link = groupLink(state.group.id), btn = $("#gCopy");
+      try { await navigator.clipboard.writeText(link); btn.textContent = "הועתק ✓"; toast("הקישור הועתק. אפשר להדביק לחברים", "ok"); }
+      catch { const r = document.createRange(); r.selectNodeContents($("#gLinkText")); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); btn.textContent = "מסומן, אפשר להעתיק"; }
+      setTimeout(() => { if (btn.isConnected) btn.textContent = "העתקת קישור"; }, 2200);
+      return;
+    }
+    if (id === "gLeave") {
+      const btn = $("#gLeave");
+      if (!btn.dataset.armed) { btn.dataset.armed = "1"; btn.textContent = "לחיצה נוספת מוציאה אותך מהקבוצה"; setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = "יציאה מהקבוצה"; } }, 3500); return; }
+      const k = gKeys.get(state.group.id);
+      try { await gCall("groupLeave", { id: state.group.id, memberId: k.memberId, key: k.key }); } catch { /* already gone */ }
+      gKeys.set(state.group.id, null);
+      resetGroup(); toast("יצאת מהקבוצה");
+      return;
+    }
+    if (id === "gNew") { resetGroup(); return; }
+  });
+
+  function resetGroup() {
+    state.group = null; state.gAvail = emptyAvail(); state.date = null; state.time = null;
+    try { if (location.hash.startsWith("#g-")) history.replaceState(null, "", location.pathname + "#book"); } catch { /* sandboxed */ }
+    renderGroup(); updateSummary();
+  }
+
+  async function refreshGroup() {
+    if (!state.group || gSaving || gSaveTimer && $("#gSaveState")?.textContent === "שומר…") return;
+    try {
+      const r = await gCall("groupGet", { id: state.group.id });
+      const before = JSON.stringify(state.group);
+      state.group = r.group;
+      if (JSON.stringify(r.group) !== before && state.step === 2 && state.mode === "group") {
+        const openMine = $(".gmine")?.open;
+        renderGroup();
+        if (openMine && $(".gmine")) $(".gmine").open = true;
+      }
+    } catch { /* keep last known */ }
+  }
+
+  async function openGroupLink(id) {
+    setMode("group");
+    $("#book").scrollIntoView({ behavior: "auto" });
+    $("#groupBox").innerHTML = `<div class="empty"><span class="spinner spinner--big" aria-hidden="true"></span><p>טוען את הקבוצה…</p></div>`;
+    state.maxStep = Math.max(state.maxStep, 2);
+    goTo(2, true);
+    try {
+      const r = await gCall("groupGet", { id });
+      state.group = r.group;
+      if (workoutById(r.group.workoutId)) { state.workoutId = r.group.workoutId; renderPick(); }
+      else if (!state.workoutId) { state.workoutId = CONFIG.workouts[0].id; renderPick(); }
+      const me = groupMe();
+      state.gAvail = me ? JSON.parse(JSON.stringify(me.avail)) : emptyAvail();
+    } catch {
+      state.group = null;
+      toast("הקבוצה לא נמצאה. אולי פג התוקף שלה. אפשר לפתוח קבוצה חדשה");
+      if (!state.workoutId) state.workoutId = CONFIG.workouts[0].id;
+    }
+    renderGroup(); updateSummary();
+  }
+
+  function setMode(mode) {
+    if (state.mode === mode) return;
+    state.mode = mode;
+    $$("#modePick .mode").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.mode === mode)));
+    state.date = null; state.time = null;
+    state.maxStep = Math.min(state.maxStep, 2);
+    if (state.step === 1) $(".btn__label", $("#nextBtn")).textContent = mode === "group" ? "המשך לתיאום הקבוצה" : "המשך";
+    updateSummary();
+  }
+
+  $("#modePick").addEventListener("click", (e) => {
+    const b = e.target.closest(".mode"); if (!b) return;
+    setMode(b.dataset.mode);
+  });
+
+  setInterval(() => { if (state.mode === "group" && state.step === 2 && !document.hidden) refreshGroup(); }, 15e3);
 
   /* ---------- hero: next free slot ---------- */
   function updateNextSlot() {
@@ -882,7 +1304,7 @@
       const late = !isPast && (bookingStart(b) - Date.now()) < CONFIG.cancelHours * 3600e3;
       return `
         <article class="bk ${isPast ? "is-past" : ""}" style="--i:${i}" data-id="${b.id}">
-          <div class="bk__top"><p class="bk__when">${esc(friendlyDay(b.date))}, ${hhmm(b.time)}</p><span class="bk__count ${isPast ? "is-past" : ""}">${relLabel(b)}</span></div>
+          <div class="bk__top"><p class="bk__when">${esc(friendlyDay(b.date))}, ${hhmm(b.time)}</p><span class="bk__count ${isPast ? "is-past" : ""}">${b.status === "tentative" && !isPast ? "ממתין לאישור · " : ""}${relLabel(b)}</span></div>
           <p class="bk__meta">${esc(w ? w.name : "")} · ${b.minutes} דק׳ · ${ils(b.price)}<br>${esc(b.details.street)}, ${esc(b.details.city)} · <span dir="ltr">${b.id}</span></p>
           ${isPast ? "" : `
           <div class="bk__actions">
@@ -1096,6 +1518,7 @@
     renderShowcase(); renderPick(); renderCityOptions();
     updateSummary();
     refreshAvailability();
+    if (state.mode === "group" && state.step === 2 && $("#groupBox").children.length) renderGroup();
   }
 
   async function loadConfig() {
@@ -1168,6 +1591,8 @@
       online ? loadTaken() : refreshAvailability();
     }
     wasAdmin = isAdmin;
+    const gm = !isAdmin && location.hash.match(/^#g-([A-Za-z0-9]{4,12})$/);
+    if (gm && state.group?.id !== gm[1]) openGroupLink(gm[1]);
   }
 
   function showGate(msg = "") {
@@ -1343,7 +1768,7 @@
     const live = bookingStart(next) <= now;
     box.innerHTML = `
       <div class="nextup__when">
-        <p class="nextup__label">${live ? "עכשיו באימון" : "האימון הבא"}</p>
+        <p class="nextup__label">${live ? "עכשיו באימון" : next.status === "tentative" ? "הבא · טנטטיבי" : "האימון הבא"}</p>
         <p class="nextup__time" dir="ltr">${hhmm(next.time)}</p>
         <p class="nextup__rel">${esc(friendlyDay(next.date))}${live || relLabel(next) === friendlyDay(next.date) ? "" : ` · ${esc(relLabel(next))}`}</p>
       </div>
@@ -1366,11 +1791,12 @@
     const revenue = week.reduce((s, b) => s + (Number(b.price) || 0), 0);
     const people = new Set(active.filter((b) => bookingEnd(b) > now).map((b) => b.details.phone || b.details.name)).size;
     const fresh = active.filter((b) => now - (b.createdAt || 0) < 24 * 3600e3).length;
+    const tentCount = active.filter((b) => b.status === "tentative" && bookingEnd(b) > now).length;
     const items = [
       ["היום", today.length, today.length ? `הראשון ב־${hhmm(Math.min(...today.map((b) => b.time)))}` : "יום פנוי"],
       ["7 הימים הקרובים", week.length, week.length === 1 ? "אימון אחד" : "אימונים"],
       ["הכנסה צפויה ב־7 ימים", ils(revenue), people ? (people === 1 ? "מתאמן אחד ביומן" : `${people} מתאמנים ביומן`) : ""],
-      ["הזמנות חדשות", fresh, "ב־24 השעות האחרונות"]
+      tentCount ? ["ממתינים לאישור שלך", tentCount, "שריונים טנטטיביים"] : ["הזמנות חדשות", fresh, "ב־24 השעות האחרונות"]
     ];
     $("#kpis").innerHTML = items.map(([label, val, sub], i) => `<li style="--i:${i}"><span>${label}</span><b>${esc(String(val))}</b>${sub ? `<small>${esc(sub)}</small>` : ""}</li>`).join("");
   }
@@ -1418,7 +1844,9 @@
       b.status === "done" ? `<span class="pill pill--done">בוצע</span>` : "",
       past && isActive(b) && b.status !== "done" ? `<span class="pill">ממתין לסימון</span>` : "",
       isNew ? `<span class="pill pill--new">חדש</span>` : "",
-      b.firstTime ? `<span class="pill pill--first">היכרות</span>` : ""
+      b.firstTime ? `<span class="pill pill--first">היכרות</span>` : "",
+      b.status === "tentative" ? `<span class="pill pill--tent">טנטטיבי · צריך לאשר</span>` : "",
+      b.group && b.group.members && b.group.members.length > 1 ? `<span class="pill pill--group">קבוצה · ${b.group.members.length}</span>` : ""
     ].join("");
     const fullAddr = [d.street, d.floor, d.city].filter(Boolean).join(", ");
     const remind = `היי ${d.name.split(" ")[0]}, כאן ${CONFIG.trainer} 👋\nמאשר את האימון ${dayPhrase(b.date)} ב־${hhmm(b.time)}${d.street ? ` ב${d.street}` : ""}.\nלהכין שטח של 2×2 מ׳, מים ומגבת. נתראה!`;
@@ -1426,7 +1854,9 @@
       ? `<button type="button" class="btn btn--ghost" data-ag="restore" data-id="${esc(b.id)}">שחזור</button>`
       : `${!past ? navButtons(d) : ""}
          ${d.phone ? `<a class="btn btn--ghost" href="https://wa.me/${intlPhone(d.phone)}?text=${encodeURIComponent(remind)}" target="_blank" rel="noopener">אישור בוואטסאפ</a>` : ""}
-         ${b.status !== "done" ? `<button type="button" class="btn btn--ghost" data-ag="done" data-id="${esc(b.id)}">סימון כבוצע</button>` : `<button type="button" class="btn btn--ghost" data-ag="undone" data-id="${esc(b.id)}">ביטול סימון</button>`}
+         ${b.status === "tentative" && !past ? `<button type="button" class="btn btn--primary" data-ag="confirm" data-id="${esc(b.id)}">מאשר, מסתדר לי</button>
+           ${d.phone ? `<a class="btn btn--ghost" href="https://wa.me/${intlPhone(d.phone)}?text=${encodeURIComponent(`היי ${d.name.split(" ")[0]}, כאן ${CONFIG.trainer}. לגבי השריון הטנטטיבי ${dayPhrase(b.date)} ב־${hhmm(b.time)}: לצערי זה לא מסתדר לי. אפשר לקבוע שעה אחרת באתר, או לכתוב לי מתי נוח לך 🙏`)}" target="_blank" rel="noopener">לא מסתדר · הצעת שעה אחרת</a>` : ""}` : ""}
+         ${b.status === "tentative" ? "" : b.status !== "done" ? `<button type="button" class="btn btn--ghost" data-ag="done" data-id="${esc(b.id)}">סימון כבוצע</button>` : `<button type="button" class="btn btn--ghost" data-ag="undone" data-id="${esc(b.id)}">ביטול סימון</button>`}
          ${!past ? `<button type="button" class="btn btn--ghost" data-ag="cancel" data-id="${esc(b.id)}">ביטול אימון</button>` : ""}`;
     return `
       <article class="agitem ${b.status === "cancelled" ? "is-cancelled" : ""} ${b.status === "done" ? "is-done" : ""}" style="--i:${i}" data-id="${esc(b.id)}">
@@ -1434,6 +1864,7 @@
         <div class="agitem__top"><span class="agitem__name">${esc(d.name)}</span>${pills}</div>
         <p class="agitem__addr">${svg(pinIcon, 18)}<span>${esc(fullAddr || "לא צוינה כתובת")}${d.code ? ` · קוד <b dir="ltr">${esc(d.code)}</b>` : ""}</span></p>
         <p class="agitem__meta"><b>${esc(w ? w.name : b.workout || "אימון")}</b> · ${b.minutes || 60} דק׳ · ${ils(Number(b.price) || 0)}${d.phone ? ` · <span dir="ltr">${esc(fmtPhone(d.phone))}</span>` : ""}${d.space ? ` · ב${esc(d.space)}` : ""}${d.goals && d.goals.length ? ` · ${d.goals.map(esc).join(", ")}` : ""}</p>
+        ${b.group && b.group.members && b.group.members.length > 1 ? `<p class="agitem__meta">משתתפים: <b>${b.group.members.map(esc).join(", ")}</b></p>` : ""}
         ${d.notes ? `<p class="agitem__notes">${esc(d.notes)}</p>` : ""}
         <div class="agitem__actions">${actions}</div>
       </article>`;
@@ -1471,11 +1902,11 @@
     if (act === "restore" && adminBookings.some((x) => x !== b && isActive(x) && x.date === b.date && x.time === b.time)) {
       toast("יש כבר אימון אחר באותה שעה"); return;
     }
-    const status = { cancel: "cancelled", restore: "", done: "done", undone: "" }[act];
+    const status = { cancel: "cancelled", restore: "", done: "done", undone: "", confirm: "" }[act];
     btn.disabled = true;
     try { await setStatus(b, status); }
     catch { btn.disabled = false; toast("השינוי לא נשמר. בדקו את החיבור ונסו שוב"); return; }
-    const msg = { cancel: `האימון של ${b.details.name.split(" ")[0]} בוטל`, restore: "האימון חזר ליומן", done: "סומן כבוצע" }[act];
+    const msg = { cancel: `האימון של ${b.details.name.split(" ")[0]} בוטל`, restore: "האימון חזר ליומן", done: "סומן כבוצע", confirm: "האימון אושר. כדאי לשלוח אישור למתאמן בוואטסאפ" }[act];
     if (msg) toast(msg, act === "cancel" ? "" : "ok");
     const card = btn.closest(".agitem");
     const leaves = (act === "cancel" && agFilter !== "today") || (act === "restore" && agFilter === "cancelled");
@@ -1625,9 +2056,11 @@
   function hoursRows() {
     return [0, 1, 2, 3, 4, 5, 6].map((d) => {
       const hs = draft.hours[d] || [];
+      const tent = (draft.tentative && draft.tentative[d]) || [];
       const chips = [];
       for (let h = HOUR_FROM; h <= HOUR_TO; h++) {
-        chips.push(`<button type="button" class="hchip" data-day="${d}" data-h="${h}" aria-pressed="${hs.includes(h)}" aria-label="יום ${DAY_LONG[d]} ${hhmm(h)}">${pad(h)}</button>`);
+        const st = !hs.includes(h) ? "off" : tent.includes(h) ? "tent" : "on";
+        chips.push(`<button type="button" class="hchip" data-day="${d}" data-h="${h}" data-state="${st}" aria-pressed="${st !== "off"}" aria-label="יום ${DAY_LONG[d]} ${hhmm(h)}: ${st === "on" ? "פנוי" : st === "tent" ? "טנטטיבי" : "סגור"}">${pad(h)}</button>`);
       }
       return `
         <div class="hours__row">
@@ -1676,7 +2109,8 @@
       </section>
 
       <section class="scard">
-        <div class="scard__head"><h2>שעות פעילות</h2><p>מסמנים את השעות שבהן אימון יכול להתחיל. שעה שלא מסומנת לא תופיע ללקוחות.</p></div>
+        <div class="scard__head"><h2>שעות פעילות</h2><p>לוחצים על שעה כדי להחליף מצב: סגור, פנוי, טנטטיבי. בשעה טנטטיבית מתאמנים יכולים לשריין, ואתה מאשר עד יום לפני.</p></div>
+        <p class="hlegend"><span><i class="hchip" data-state="on"></i>פנוי</span><span><i class="hchip" data-state="tent"></i>טנטטיבי</span><span><i class="hchip" data-state="off"></i>סגור</span></p>
         <div class="hours" id="hoursBox">${hoursRows()}</div>
         <p class="hours__hint" id="hoursHint">${esc(hoursSummaryOf(d) || "כרגע כל הימים סגורים")}</p>
       </section>
@@ -1714,6 +2148,7 @@
           ${fieldHtml("הנחה לאימון ראשון", `<div class="field__suffix"><input id="sDisc" type="number" inputmode="numeric" min="0" max="90" data-k="firstTimeDiscount" data-scale="0.01" value="${Math.round(d.firstTimeDiscount * 100)}"><span>%</span></div>`, { id: "sDisc", hint: "(0 = בלי)" })}
           ${fieldHtml("אפשר לקבוע עד", `<div class="field__suffix"><input id="sLead" type="number" inputmode="numeric" min="0" max="72" data-k="minLeadHours" value="${val(d.minLeadHours)}"><span>שעות לפני</span></div>`, { id: "sLead" })}
           ${fieldHtml("כמה זמן קדימה אפשר לקבוע", `<div class="field__suffix"><input id="sAhead" type="number" inputmode="numeric" min="7" max="180" data-k="daysAhead" value="${val(d.daysAhead)}"><span>ימים</span></div>`, { id: "sAhead" })}
+          ${fieldHtml("תוספת לכל משתתף נוסף בקבוצה", `<div class="field__suffix"><input id="sGroupExtra" type="number" inputmode="numeric" min="0" max="2000" data-k="groupExtra" value="${val(d.groupExtra)}"><span>₪</span></div>`, { id: "sGroupExtra" })}
           ${fieldHtml("ביטול חינם עד", `<div class="field__suffix"><input id="sCancel" type="number" inputmode="numeric" min="0" max="72" data-k="cancelHours" value="${val(d.cancelHours)}"><span>שעות לפני</span></div>`, { id: "sCancel" })}
         </div>
       </section>
@@ -1775,9 +2210,18 @@
     if (chip) {
       const d = Number(chip.dataset.day), h = Number(chip.dataset.h);
       const hs = new Set(draft.hours[d] || []);
-      hs.has(h) ? hs.delete(h) : hs.add(h);
+      draft.tentative = draft.tentative || {};
+      const tent = new Set(draft.tentative[d] || []);
+      // סגור → פנוי → טנטטיבי → סגור
+      const st = !hs.has(h) ? "off" : tent.has(h) ? "tent" : "on";
+      const next = { off: "on", on: "tent", tent: "off" }[st];
+      if (next === "off") { hs.delete(h); tent.delete(h); } else hs.add(h);
+      if (next === "tent") tent.add(h); else tent.delete(h);
       draft.hours[d] = [...hs].sort((a, b) => a - b);
-      chip.setAttribute("aria-pressed", String(hs.has(h)));
+      draft.tentative[d] = [...tent].sort((a, b) => a - b);
+      chip.dataset.state = next;
+      chip.setAttribute("aria-pressed", String(next !== "off"));
+      chip.setAttribute("aria-label", `יום ${DAY_LONG[d]} ${hhmm(h)}: ${next === "on" ? "פנוי" : next === "tent" ? "טנטטיבי" : "סגור"}`);
       const row = chip.closest(".hours__row");
       $(".hours__day small", row).textContent = hs.size ? `${hs.size} שעות` : "סגור";
       $("#hoursHint").textContent = hoursSummaryOf(draft) || "כרגע כל הימים סגורים";
@@ -1793,9 +2237,10 @@
     }
     const btn = e.target.closest("[data-act]"); if (!btn) return;
     const act = btn.dataset.act;
-    if (act === "copyWeek") { for (let d = 1; d <= 4; d++) draft.hours[d] = [...draft.hours[0]]; refreshHours(); toast("השעות של יום ראשון הועתקו לב׳–ה׳", "ok"); }
-    if (act === "copyPrev") { const d = Number(btn.dataset.day); draft.hours[d] = [...draft.hours[d - 1]]; refreshHours(); }
-    if (act === "clearDay") { draft.hours[Number(btn.dataset.day)] = []; refreshHours(); }
+    draft.tentative = draft.tentative || {};
+    if (act === "copyWeek") { for (let d = 1; d <= 4; d++) { draft.hours[d] = [...draft.hours[0]]; draft.tentative[d] = [...(draft.tentative[0] || [])]; } refreshHours(); toast("השעות של יום ראשון הועתקו לב׳–ה׳", "ok"); }
+    if (act === "copyPrev") { const d = Number(btn.dataset.day); draft.hours[d] = [...draft.hours[d - 1]]; draft.tentative[d] = [...(draft.tentative[d - 1] || [])]; refreshHours(); }
+    if (act === "clearDay") { draft.hours[Number(btn.dataset.day)] = []; draft.tentative[Number(btn.dataset.day)] = []; refreshHours(); }
     if (act === "addWorkout") {
       draft.workouts.push({ id: "w" + Date.now().toString(36), name: "", minutes: 60, price: 250, sub: "", desc: "", gear: ["מזרן"], icon: "strength" });
       renderSettings();
@@ -1827,7 +2272,7 @@
     if (!draft.cities.some((c) => (c.name || "").trim())) bad('[data-c="0"][data-f="name"]', "צריך לפחות עיר אחת");
     draft.cities.forEach((c, i) => { if (!(c.fee >= 0 && c.fee <= 500)) bad(`[data-c="${i}"][data-f="fee"]`, "תוספת נסיעה בין 0 ל־500 ₪"); });
     if (draft.allowAllCities && !(draft.otherCityFee >= 0 && draft.otherCityFee <= 500)) bad('[data-k="otherCityFee"]', "תוספת נסיעה בין 0 ל־500 ₪");
-    const rules = [["firstTimeDiscount", 0, 0.9, "הנחה בין 0 ל־90%"], ["minLeadHours", 0, 72, "שעות מראש בין 0 ל־72"], ["daysAhead", 7, 180, "ימים קדימה בין 7 ל־180"], ["cancelHours", 0, 72, "שעות לביטול בין 0 ל־72"]];
+    const rules = [["groupExtra", 0, 2000, "תוספת למשתתף בין 0 ל־2,000 ₪"], ["firstTimeDiscount", 0, 0.9, "הנחה בין 0 ל־90%"], ["minLeadHours", 0, 72, "שעות מראש בין 0 ל־72"], ["daysAhead", 7, 180, "ימים קדימה בין 7 ל־180"], ["cancelHours", 0, 72, "שעות לביטול בין 0 ל־72"]];
     rules.forEach(([k, min, max, msg]) => { if (!(draft[k] >= min && draft[k] <= max)) bad(`[data-k="${k}"]`, msg); });
     return errs;
   }
